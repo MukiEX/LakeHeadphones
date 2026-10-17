@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LakeHP</title>
+<style>
+:root{--bg:#121417;--panel:#1b1e23;--panel2:#23272e;--line:#2f343c;--fg:#e6e8eb;--dim:#8b939e;--acc:#4cc79a;--ok:#3ecf8e;--warn:#f5b942;--bad:#ef5b5b}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:17px;margin:0;font-weight:650;letter-spacing:.2px}
+.tag{color:var(--dim);font-size:12px}
+header .sp{flex:1}
+nav{display:flex;gap:4px;padding:10px 20px 0;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto}
+nav button{background:none;border:0;color:var(--dim);padding:9px 14px;font:inherit;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+nav button.on{color:var(--fg);border-color:var(--acc)}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+section{display:none}section.on{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:default}
+.card h3{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
+.card p{margin:0;color:var(--dim);font-size:13px}
+.card.pick{cursor:pointer}.card.pick:hover{border-color:#4a515c}
+.card.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.card.off{opacity:.45;cursor:not-allowed}
+.dot{width:10px;height:10px;border-radius:50%;background:#444;display:inline-block;flex:none}
+.dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}.dot.mid{background:var(--warn)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px}
+.kv>span:nth-child(odd){color:var(--dim)}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-variant-numeric:tabular-nums}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button.b{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:7px 13px;font:inherit;cursor:pointer}
+button.b:hover{border-color:#4a515c}
+button.b.pri{background:var(--acc);border-color:var(--acc);color:#111;font-weight:600}
+button.b.danger{color:var(--bad)}
+button.b:disabled{opacity:.4;cursor:default}
+.badge{font-size:11px;padding:1px 7px;border-radius:5px;white-space:nowrap}
+.badge.ok{background:#1d3b2e;color:var(--ok)}.badge.no{background:#3b2a1d;color:var(--warn)}
+.form{display:grid;grid-template-columns:minmax(150px,230px) 1fr;gap:12px 18px;align-items:center}
+.form>label{color:var(--dim)}
+.form .help{grid-column:2;color:var(--dim);font-size:12px;margin-top:-8px}
+select{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;justify-self:start;min-width:200px}
+input[type=range]{width:240px;accent-color:var(--acc)}
+.pair{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.pair h3{margin:0 0 10px;font-size:15px;display:flex;align-items:center;gap:8px}
+.pair.unused{opacity:.5}
+.big{font-size:20px;font-weight:650;min-width:56px}
+details summary{cursor:pointer;color:var(--dim);margin:10px 0 6px}
+.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+h2{font-size:15px;margin:26px 0 12px}section>h2:first-child{margin-top:0}
+.note{color:var(--dim);font-size:13px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 18px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+.toast.on{opacity:1}
+.stage{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+svg text{fill:var(--dim);font:11px system-ui,sans-serif}
+.dirty{color:var(--warn);font-size:12px}
+@media (max-width:600px){.form{grid-template-columns:1fr}.form .help{grid-column:1;margin-top:-6px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>LakeHP</h1><span class="tag" id="fw"></span><span class="sp"></span>
+  <span class="tag" id="link">connecting…</span>
+</header>
+<nav id="tabs">
+  <button data-t="sound" class="on">Sound</button>
+  <button data-t="surround">Surround lab</button>
+  <button data-t="headset">Headset</button>
+  <button data-t="system">System</button>
+</nav>
+<main>
+<section id="sound" class="on">
+  <h2>Speaker arrangement</h2>
+  <div class="grid" id="arr">
+    <div class="card pick" data-a="stereo"><h3>Stereo</h3><p>USB stereo device (USB Audio 1.0) for consoles such as the Switch. Played on virtual front speakers in the room. <b>Restarts the Pico</b>; this page is not available in stereo mode (press BOOTSEL 3× to come back).</p></div>
+    <div class="card pick" data-a="51"><h3>5.1</h3><p>Six-channel USB sound card: front left/centre/right, two surrounds and LFE. <b>Restarts the Pico</b> when switching.</p></div>
+    <div class="card pick" data-a="71"><h3>7.1</h3><p>Eight-channel USB sound card: the surrounds become side speakers plus a separate rear pair. Set Windows' speaker setup to 7.1. <b>Restarts the Pico</b> when switching.</p></div>
+  </div>
+  <p class="note" id="arrNote"></p>
+  <h2>Room</h2>
+  <div class="form">
+    <label>Room</label>
+    <select id="room"><option value="1">Small</option><option value="2">Medium</option><option value="3">Large</option></select>
+    <label>Low-latency stereo</label>
+    <select id="lowlat"><option value="0">Off: virtual rooms</option><option value="1">On: plain downmix, ~40 ms less delay</option></select>
+  </div>
+  <div class="row" style="margin-top:22px"><button class="b pri" id="saveSound">Save as power-up default</button><span class="dirty" id="dirty1"></span></div>
+  <p class="note">Changes play immediately. Saving writes to flash, which causes a short gap in the sound.</p>
+</section>
+
+<section id="surround">
+  <h2>Placement preset</h2>
+  <div class="grid" id="presets">
+    <div class="card pick" data-preset="factory"><h3>Factory</h3><p>The filters as they were made: surrounds at about 118°. In 7.1 the rear pair shares the surround position.</p></div>
+    <div class="card pick" data-preset="theater"><h3>Theater</h3><p>Surrounds at 136°, behind your shoulders. In 7.1 the rear pair goes far back, to 150°.</p></div>
+    <div class="card" data-preset="custom"><h3>Custom</h3><p>Your own placement from the sliders below.</p></div>
+  </div>
+  <h2>Move the speakers</h2>
+  <p class="note">The sliders reshape the surround filters while you listen. Front, centre and room reverb stay as they are. Play something with busy surrounds (the walk-test WAV works well).</p>
+  <div class="stage">
+    <div style="flex:1;min-width:300px">
+      <div class="pair" id="pairS">
+        <h3><span class="sw" style="background:#4cc79a"></span><span id="pairSName">Surround speakers</span></h3>
+        <div class="row"><input type="range" id="az" min="90" max="165" step="1"><span class="big mono" id="azV"></span></div>
+        <details><summary>Fine tune</summary>
+          <div class="form">
+            <label>Near-ear delay</label>
+            <div class="row"><input type="range" id="delay" min="-12" max="24" step="0.5"><span class="mono" id="delayV"></span></div>
+            <div class="help">Changes the time difference between your ears. Positive = smaller difference, further behind. Negative = larger, further forward.</div>
+            <label>Far-ear treble</label>
+            <div class="row"><input type="range" id="hf" min="-6" max="12" step="0.5"><span class="mono" id="hfV"></span></div>
+            <div class="help">Above 2 kHz at the far ear. Boost = smaller loudness difference (further behind), cut = larger.</div>
+            <label>Behind cues</label>
+            <div class="row"><input type="range" id="eq" min="-1" max="2" step="0.05"><span class="mono" id="eqV"></span></div>
+            <div class="help">How your outer ear colours sound from behind: more 1 kHz and 11 kHz, less 4.5 kHz. 100% = textbook amount; negative = the opposite.</div>
+          </div>
+        </details>
+      </div>
+      <div class="pair" id="pairB">
+        <h3><span class="sw" style="background:#f5b942"></span>Rear speakers <span class="badge no" id="pairBNote">7.1 only</span></h3>
+        <div class="row"><input type="range" id="baz" min="90" max="165" step="1"><span class="big mono" id="bazV"></span></div>
+        <details><summary>Fine tune</summary>
+          <div class="form">
+            <label>Near-ear delay</label>
+            <div class="row"><input type="range" id="bdelay" min="-12" max="24" step="0.5"><span class="mono" id="bdelayV"></span></div>
+            <label>Far-ear treble</label>
+            <div class="row"><input type="range" id="bhf" min="-6" max="12" step="0.5"><span class="mono" id="bhfV"></span></div>
+            <label>Behind cues</label>
+            <div class="row"><input type="range" id="beq" min="-1" max="2" step="0.05"><span class="mono" id="beqV"></span></div>
+          </div>
+        </details>
+        <p class="note" style="margin-top:8px">A rear pair in its own position needs extra processing (see Load on the System tab). At the surround position it costs nothing.</p>
+      </div>
+    </div>
+    <svg id="head" viewBox="-110 -110 220 220" width="240" height="240" aria-label="speaker positions">
+      <circle r="78" fill="none" stroke="#2f343c" stroke-dasharray="3 4"/>
+      <circle r="22" fill="#23272e" stroke="#4a515c"/>
+      <path d="M-6 -21 L0 -30 L6 -21" fill="none" stroke="#8b939e"/>
+      <g id="spk"></g>
+    </svg>
+  </div>
+  <div class="row" style="margin-top:6px"><button class="b pri" id="saveSur">Save as power-up default</button><button class="b" id="revert">Back to saved</button><span class="dirty" id="dirty2"></span></div>
+</section>
+
+<section id="headset">
+  <div class="grid">
+    <div class="card"><h3><span class="dot" id="btDot"></span>Bluetooth</h3><div class="kv mono" id="btKv"></div></div>
+  </div>
+  <h2>Pair a different headset</h2>
+  <p class="note">Forgets the remembered headset and starts pairing. Put the new one in pairing mode close to the Pico; it picks the nearest headphones within a few seconds and you hear two rising tones.</p>
+  <div class="row"><button class="b danger" id="forget">Forget headset and pair</button></div>
+</section>
+
+<section id="system">
+  <div class="grid">
+    <div class="card"><h3><span class="dot" id="usbDot"></span>USB audio</h3><div class="kv mono" id="usbKv"></div></div>
+    <div class="card"><h3>Load</h3><div class="kv mono" id="loadKv"></div></div>
+    <div class="card"><h3>Firmware</h3><div class="kv mono" id="fwKv"></div></div>
+  </div>
+  <h2>Settings page</h2>
+  <p class="note">The page runs over a small USB network adapter next to the sound card. Turning it off removes the adapter; press BOOTSEL 5 times to bring it back.</p>
+  <div class="row"><button class="b" id="webOff">Turn the settings adapter off</button><button class="b" id="reboot">Restart the Pico</button></div>
+</section>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const $=id=>document.getElementById(id);
+let S=null, editing=0;
+const toast=t=>{const e=$('toast');e.textContent=t;e.classList.add('on');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('on'),1800)};
+async function post(o){const r=await fetch('/api/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});return r.json()}
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===b.dataset.t))});
+const BT=['off','pairing','reconnecting','connected','streaming'];
+function kv(el,o){el.innerHTML=Object.entries(o).map(([k,v])=>`<span>${k}</span><span>${v}</span>`).join('')}
+function same(a,b){return Math.abs(a.delay-b.delay)<.01&&Math.abs(a.hf-b.hf)<.01&&Math.abs(a.eq-b.eq)<.01}
+/* same mapping as lhp_surround_for_azimuth() / lhp_surround_azimuth() in the engine */
+const HAC=0.0875/343, ITD0=0.0005;
+function forAz(d){d=Math.min(165,Math.max(90,d));if(Math.abs(d-118)<.5)return{delay:0,hf:0,eq:0};
+  const th=(180-d)*Math.PI/180,itd=HAC*(th+Math.sin(th));
+  let hf=(d-118)*4/18,eq=d>=118?(d-118)/18:(d-118)/28;hf=Math.min(12,Math.max(-6,hf));eq=Math.min(2,Math.max(-1,eq));
+  return{delay:Math.round((ITD0-itd)*48000*10)/10,hf:Math.round(hf*10)/10,eq:Math.round(eq*100)/100}}
+function azOf(s){let itd=Math.min(HAC*(Math.PI/2+1),Math.max(0,ITD0-s.delay/48000)),lo=0,hi=Math.PI/2;
+  for(let i=0;i<40;i++){const m=(lo+hi)/2;if(HAC*(m+Math.sin(m))<itd)lo=m;else hi=m}return 180-lo*180/Math.PI}
+function drawHead(az,baz,is71){
+  const P=[['L',-30,0],['C',0,0],['R',30,0],[is71?'SL':'Ls',-az,1],[is71?'SR':'Rs',az,1]];
+  if(is71)P.push(['RL',-baz,2],['RR',baz,2]);
+  const col=['#23272e','#4cc79a','#f5b942'],stk=['#8b939e','#4cc79a','#f5b942'];
+  $('spk').innerHTML=P.map(([n,a,k])=>{const r=a*Math.PI/180,x=78*Math.sin(r),y=-78*Math.cos(r);
+    return `<rect x="${x-9}" y="${y-9}" width="18" height="18" rx="4" fill="${col[k]}" stroke="${stk[k]}"/><text x="${x+(Math.abs(x)>40?(x>0?16:-16):0)}" y="${y+(Math.abs(x)>40?4:(y>0?24:-14))}" text-anchor="${Math.abs(x)>40?(x>0?'start':'end'):'middle'}">${n}</text>`}).join('');
+}
+function showPair(p,s){
+  $(p+'delay').value=s.delay;$(p+'hf').value=s.hf;$(p+'eq').value=s.eq;
+  const az=Math.round(azOf(s));$(p+'az').value=az;$(p+'azV').textContent=az+'°';
+  $(p+'delayV').textContent=(s.delay/48).toFixed(3)+' ms';$(p+'hfV').textContent=(s.hf>=0?'+':'')+(+s.hf).toFixed(1)+' dB';$(p+'eqV').textContent=Math.round(s.eq*100)+'%';
+}
+let cur={'':{delay:0,hf:0,eq:0},b:{delay:0,hf:0,eq:0}};
+function render(){
+  if(!S)return;
+  $('fw').textContent='v'+S.fw;
+  const is71=S.arr==='71';
+  document.querySelectorAll('#arr .card').forEach(c=>c.classList.toggle('sel',c.dataset.a===S.arr));
+  $('arrNote').textContent=S.saved.arr!==S.arr?'Restarting…':'';
+  if(!S.filters)$('arrNote').textContent='No room filters on this Pico: add them with lakehp_flasher.html. Running as plain stereo.';
+  if(document.activeElement!==$('room'))$('room').value=S.room;
+  if(document.activeElement!==$('lowlat'))$('lowlat').value=S.lowlat?1:0;
+  document.querySelectorAll('#presets .card').forEach(c=>c.classList.toggle('sel',c.dataset.preset===S.preset));
+  if(!editing){cur['']=S.sur;cur.b=S.back;showPair('',S.sur);showPair('b',S.back)}
+  $('pairSName').textContent=is71?'Side speakers (surround)':'Surround speakers';
+  $('pairB').classList.toggle('unused',!is71);$('pairBNote').style.display=is71?'none':'';
+  drawHead(azOf(cur['']),azOf(cur.b),is71);
+  const d1=S.room!==S.saved.room||S.lowlat!==S.saved.lowlat;
+  $('dirty1').textContent=d1?'Not saved: power-up uses the saved settings.':'';
+  $('dirty2').textContent=S.preset!==S.saved.preset?'Not saved.':(S.preset==='custom'?'Custom placement (Save keeps it).':'');
+  $('btDot').className='dot'+(S.bt.state===4?' on':S.bt.state===3?' mid':'');
+  kv($('btKv'),{state:BT[S.bt.state]||S.bt.state,headset:S.bt.addr||'—',codec:S.bt.rate?`SBC ${S.bt.rate/1000} kHz, bitpool ${S.bt.bitpool}`:'—'});
+  $('usbDot').className='dot'+(S.usb.stream?' on':'');
+  kv($('usbKv'),{stream:S.usb.stream?'playing':'idle','packets/s':S.usb.rx,mode:S.stereo?'stereo (UAC1)':is71?'7.1 (UAC2)':'5.1 (UAC2)'});
+  kv($('loadKv'),{'Virtualizer DSP (core 1)':S.load.dsp+'%','BT encoder (core 0)':S.load.enc+'%'});
+  kv($('fwKv'),{version:S.fw,filters:S.filters?'3 rooms':'missing',settings:'192.168.20.1'});
+}
+async function poll(){
+  try{S=await (await fetch('/api/state')).json();$('link').textContent='connected';render()}
+  catch(e){$('link').textContent='not connected'}
+  setTimeout(poll,1000);
+}
+document.querySelectorAll('#arr .card.pick').forEach(c=>c.onclick=async()=>{
+  const a=c.dataset.a;
+  if(S&&a===S.arr)return;
+  if(a==='stereo'&&!confirm('Switch to stereo? The Pico restarts as a stereo device and this page goes away until you press BOOTSEL 3 times.'))return;
+  if(a!=='stereo'&&!confirm(`Switch to ${a==='71'?'7.1':'5.1'}? The Pico restarts and Windows sees a new sound card.`))return;
+  const r=await post({arr:a});toast(r.msg||'ok');
+});
+$('room').onchange=async e=>{await post({room:+e.target.value});toast('Room changed')};
+$('lowlat').onchange=async e=>{await post({lowlat:+e.target.value});toast('Done')};
+let tm=0;
+function send(o){editing=1;clearTimeout(tm);tm=setTimeout(async()=>{await post(o);setTimeout(()=>editing=0,400)},150)}
+['','b'].forEach(p=>{
+  $(p+'az').oninput=()=>{editing=1;const a=+$(p+'az').value,s=forAz(a);cur[p]=s;showPair(p,s);render();send({[p+'az']:a})};
+  ['delay','hf','eq'].forEach(k=>$(p+k).oninput=()=>{editing=1;const s={delay:+$(p+'delay').value,hf:+$(p+'hf').value,eq:+$(p+'eq').value};cur[p]=s;showPair(p,s);render();
+    send({[p+'delay']:s.delay,[p+'hf']:s.hf,[p+'eq']:s.eq})});
+});
+document.querySelectorAll('#presets .card.pick').forEach(c=>c.onclick=async()=>{await post({preset:c.dataset.preset});toast(c.querySelector('h3').textContent)});
+$('saveSound').onclick=$('saveSur').onclick=async()=>{const r=await post({action:'save'});toast(r.msg||'Saved')};
+$('revert').onclick=async()=>{await post({action:'revert'});toast('Back to saved')};
+$('forget').onclick=async()=>{if(confirm('Forget the current headset?')){await post({action:'forget'});toast('Pairing…')}};
+$('webOff').onclick=async()=>{if(confirm('Remove the settings adapter? Press BOOTSEL 5 times to bring it back.')){await post({action:'weboff'});toast('Restarting…')}};
+$('reboot').onclick=async()=>{await post({action:'reboot'});toast('Restarting…')};
+poll();
+</script>
+</body>
+</html>

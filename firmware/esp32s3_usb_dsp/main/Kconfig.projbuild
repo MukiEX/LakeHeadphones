@@ -1,0 +1,40 @@
+menu "LakeHP 5.1 (ESP32-S3 USB + DSP)"
+    choice LHP_I2S_ROLE
+        prompt "I2S role"
+        default LHP_I2S_MASTER
+        config LHP_I2S_MASTER
+            bool "Master (classic ESP32 A2DP transmitter)"
+        config LHP_I2S_SLAVE
+            bool "Slave (nRF5340 LE Audio transmitter drives the clocks)"
+    endchoice
+    choice LHP_I2S_SLOT
+        prompt "I2S slot width"
+        default LHP_I2S_SLOT_32
+        config LHP_I2S_SLOT_32
+            bool "32-bit slots (classic ESP32)"
+        config LHP_I2S_SLOT_16
+            bool "16-bit slots (nRF5340 nrf_audio default)"
+    endchoice
+    config LHP_TARGET_FILL
+        int "Rooms mode: frames buffered in the device (latency vs. robustness)"
+        range 1536 3072
+        default 2560
+        help
+          48 frames = 1 ms. Must cover one 1024-frame DSP block plus jitter.
+    config LHP_I2S_BCLK
+        int "I2S BCLK GPIO"
+        default 5
+    config LHP_I2S_WS
+        int "I2S WS/LRCK GPIO"
+        default 6
+    config LHP_I2S_DOUT
+        int "I2S DATA out GPIO"
+        default 7
+    config LHP_BUTTON_GPIO
+        int "Room button GPIO (BOOT = 0)"
+        default 0
+    config LHP_DEFAULT_ROOM
+        int "Room at first boot (1 small, 2 medium, 3 large)"
+        range 1 3
+        default 1
+endmenu

@@ -1,0 +1,33 @@
+menu "LakeHP 5.1 (ESP32 Bluetooth transmitter)"
+    config LHP_I2S_BCLK
+        int "I2S BCLK GPIO (from ESP32-S3)"
+        default 26
+    config LHP_I2S_WS
+        int "I2S WS/LRCK GPIO (from ESP32-S3)"
+        default 25
+    config LHP_I2S_DIN
+        int "I2S DATA GPIO (from ESP32-S3)"
+        default 22
+    config LHP_TX_TARGET_FILL
+        int "Frames buffered between I2S and Bluetooth (48 per ms)"
+        range 600 6000
+        default 2400
+        help
+          2400 (50 ms) is robust. Around 1200 (25 ms) suits the S3's
+          low-latency stereo mode if your Bluetooth link is clean.
+    config LHP_SWAP_LR
+        bool "Swap left/right (if your headset's channels come out reversed)"
+        default n
+    config LHP_BUTTON_GPIO
+        int "Button GPIO (BOOT = 0). Hold 2 s to forget the headset and re-pair"
+        default 0
+    config LHP_LED_GPIO
+        int "Status LED GPIO (-1 = none; many DevKits have one on 2)"
+        default 2
+    config LHP_HEADSET_NAME
+        string "Only pair with a headset whose name contains this (empty = first audio device found)"
+        default ""
+    config LHP_DEVICE_NAME
+        string "Bluetooth name of this transmitter"
+        default "LakeHP 5.1"
+endmenu

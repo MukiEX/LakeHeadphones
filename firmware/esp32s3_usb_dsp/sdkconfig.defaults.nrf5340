@@ -1,0 +1,8 @@
+# ESP32-S3 settings for the LE Audio build (S3 -> nRF5340 DK over I2S).
+# idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.nrf5340" set-target esp32s3 build
+# The nRF5340 is I2S master (its audio clock paces everything) and sends
+# 16-bit Philips frames, BCLK = 1.536 MHz. Its clock is steady, so less
+# buffering is needed than with Classic Bluetooth.
+CONFIG_LHP_I2S_SLAVE=y
+CONFIG_LHP_I2S_SLOT_16=y
+CONFIG_LHP_TARGET_FILL=1536

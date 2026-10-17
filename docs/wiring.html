@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LakeHP 5.1 Wiring</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column, diagrams break out wider; bench-schematic look on faint graph paper */
+:root {
+  --paper: #f6f7f4;
+  --grid: #e3e7df;
+  --ink: #1d2422;
+  --muted: #5d6762;
+  --board: #ffffff;
+  --board-edge: #2f3a36;
+  --chip: #dfe5e1;
+  --accent: #0b6e4f;
+  --w-bclk: #c98a00;
+  --w-ws: #7b3fb5;
+  --w-data: #1f6fd1;
+  --w-gnd: #2b2b2b;
+  --w-5v: #c8322b;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #141a18; --grid: #1f2724; --ink: #e6ece8; --muted: #9aa7a0;
+    --board: #1b2321; --board-edge: #a9b8b0; --chip: #2a3431; --accent: #4cc79a;
+    --w-bclk: #f0b429; --w-ws: #b98ae6; --w-data: #5aa2ff; --w-gnd: #cfd6d2; --w-5v: #ff6b5f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #141a18; --grid: #1f2724; --ink: #e6ece8; --muted: #9aa7a0;
+  --board: #1b2321; --board-edge: #a9b8b0; --chip: #2a3431; --accent: #4cc79a;
+  --w-bclk: #f0b429; --w-ws: #b98ae6; --w-data: #5aa2ff; --w-gnd: #cfd6d2; --w-5v: #ff6b5f;
+  color-scheme: dark;
+}
+html { background: var(--paper); }
+body {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px;
+}
+.wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+.col { max-width: 68ch; }
+header { display: flex; flex-direction: column; gap: 10px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(30px, 5vw, 44px); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-family: var(--display); font-weight: 800; font-size: 24px; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 17px; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--muted); font-size: 17px; }
+section { display: flex; flex-direction: column; gap: 18px; }
+.figure {
+  overflow-x: auto;
+  border: 1.5px solid var(--board-edge);
+  background: color-mix(in srgb, var(--paper) 85%, var(--board));
+  border-radius: 6px;
+}
+.figure svg { display: block; min-width: 860px; width: 100%; height: auto; }
+.caption { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.tablewrap { overflow-x: auto; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td.mono, code { font-family: var(--mono); font-size: 14px; }
+.sw { display: inline-block; width: 26px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 8px; }
+.sw.dash { background: repeating-linear-gradient(90deg, var(--w-5v) 0 6px, transparent 6px 10px) !important; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 28px; }
+.note { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.note p { color: var(--muted); font-size: 15px; }
+.warn { border-left: 3px solid var(--w-5v); padding-left: 12px; }
+.spec { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 13.5px; color: var(--muted); }
+.spec b { color: var(--ink); font-weight: 600; }
+hr { border: 0; border-top: 1.5px dashed var(--grid); margin: 0; }
+/* svg text + strokes from tokens */
+svg text { font-family: var(--mono); fill: var(--ink); }
+svg .t-muted { fill: var(--muted); }
+svg .t-title { font-family: var(--display); font-weight: 800; }
+svg .board { fill: var(--board); stroke: var(--board-edge); stroke-width: 2; }
+svg .chip { fill: var(--chip); stroke: var(--board-edge); stroke-width: 1; }
+svg .pad { fill: var(--paper); stroke: var(--board-edge); stroke-width: 1.5; }
+svg .pin { fill: var(--board-edge); }
+svg .outline { fill: none; stroke: var(--board-edge); stroke-width: 1.6; }
+svg .usb { fill: var(--chip); stroke: var(--board-edge); stroke-width: 1.4; }
+svg .cable { fill: none; stroke: var(--muted); stroke-width: 3; stroke-linecap: round; }
+svg .wave { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+svg .w { fill: none; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+svg .bclk { stroke: var(--w-bclk); } svg .ws { stroke: var(--w-ws); } svg .data { stroke: var(--w-data); }
+svg .gnd { stroke: var(--w-gnd); } svg .v5 { stroke: var(--w-5v); stroke-dasharray: 9 6; }
+svg .lbl-bg { fill: var(--paper); }
+svg .fill-accent { fill: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  svg .wave { animation: pulse 2.4s ease-in-out infinite; }
+  svg .wave.d2 { animation-delay: .3s; } svg .wave.d3 { animation-delay: .6s; }
+  @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+}
+</style>
+
+</head><body>
+<div class="wrap">
+  <header class="col">
+    <span class="eyebrow">Bench sheet · three builds</span>
+    <h1>LakeHP 5.1 wiring</h1>
+    <p class="lede">The ESP32-S3 is the USB 5.1 sound card and runs the virtual rooms. It streams stereo over I2S to a classic ESP32, which handles Bluetooth to your headset. It takes four wires, plus an optional fifth for power. Further down: the Pico 2 W single-board build, and the ESP32-S3 + nRF5340 LE Audio build.</p>
+  </header>
+
+  <section>
+    <div class="figure" role="img" aria-label="Wiring diagram: ESP32-S3 GPIO5, 6 and 7 connect to ESP32 GPIO26, 25 and 22; ground to ground; optional 5V to 5V. The S3's USB port goes to the PC; the ESP32 talks Bluetooth to the headset.">
+      <svg viewBox="0 0 960 470" xmlns="http://www.w3.org/2000/svg">
+        <!-- PC -->
+        <g transform="translate(28,34)">
+          <rect class="outline" x="0" y="0" width="120" height="76" rx="5"/>
+          <rect class="chip" x="10" y="10" width="100" height="52" rx="2"/>
+          <rect class="outline" x="44" y="76" width="32" height="10"/>
+          <rect class="outline" x="30" y="86" width="60" height="6" rx="2"/>
+          <text x="60" y="41" text-anchor="middle" font-size="13" font-weight="600">PC</text>
+          <text x="60" y="114" text-anchor="middle" font-size="11.5" class="t-muted">plays 5.1 audio</text>
+        </g>
+        <!-- cable PC -> S3 USB -->
+        <path class="cable" d="M88 152 C 88 200, 150 210, 150 232"/>
+        <text x="80" y="204" text-anchor="end" font-size="11" class="t-muted">USB-C</text>
+
+        <!-- ESP32-S3 board -->
+        <g transform="translate(60,232)">
+          <rect class="board" x="0" y="0" width="290" height="190" rx="8"/>
+          <rect class="usb" x="70" y="-8" width="34" height="14" rx="3"/>
+          <text x="87" y="-14" text-anchor="middle" font-size="10.5" font-weight="600">USB</text>
+          <rect class="usb" x="160" y="-8" width="34" height="14" rx="3"/>
+          <text x="177" y="-14" text-anchor="middle" font-size="10.5" class="t-muted">UART</text>
+          <rect class="chip" x="30" y="40" width="110" height="80" rx="3"/>
+          <text x="85" y="76" text-anchor="middle" font-size="12" font-weight="600">ESP32-S3</text>
+          <text x="85" y="93" text-anchor="middle" font-size="10.5" class="t-muted">USB + DSP</text>
+          <text x="14" y="176" font-size="12" class="t-title">ESP32-S3-DevKitC-1</text>
+          <!-- header pins on the right edge -->
+          <g font-size="12">
+            <circle class="pad" cx="270" cy="34" r="7"/><text x="256" y="38" text-anchor="end">GPIO5</text>
+            <circle class="pad" cx="270" cy="64" r="7"/><text x="256" y="68" text-anchor="end">GPIO6</text>
+            <circle class="pad" cx="270" cy="94" r="7"/><text x="256" y="98" text-anchor="end">GPIO7</text>
+            <circle class="pad" cx="270" cy="124" r="7"/><text x="256" y="128" text-anchor="end">GND</text>
+            <circle class="pad" cx="270" cy="154" r="7"/><text x="256" y="158" text-anchor="end">5V</text>
+          </g>
+          <circle class="pad" cx="200" cy="150" r="9"/><text x="186" y="154" text-anchor="end" font-size="10.5" class="t-muted">BOOT: tap room · hold LL</text>
+        </g>
+
+        <!-- ESP32 board -->
+        <g transform="translate(610,232)">
+          <rect class="board" x="0" y="0" width="290" height="190" rx="8"/>
+          <rect class="usb" x="128" y="182" width="34" height="14" rx="3"/>
+          <text x="145" y="214" text-anchor="middle" font-size="10.5" class="t-muted">micro-USB (flash / power)</text>
+          <rect class="chip" x="150" y="40" width="110" height="80" rx="3"/>
+          <text x="205" y="76" text-anchor="middle" font-size="12" font-weight="600">ESP32</text>
+          <text x="205" y="93" text-anchor="middle" font-size="10.5" class="t-muted">Bluetooth A2DP</text>
+          <text x="190" y="150" font-size="12" class="t-title">ESP32-DevKitC</text>
+          <text x="190" y="166" font-size="10.5" class="t-muted">WROOM-32</text>
+          <g font-size="12">
+            <circle class="pad" cx="20" cy="34" r="7"/><text x="34" y="38">GPIO26</text>
+            <circle class="pad" cx="20" cy="64" r="7"/><text x="34" y="68">GPIO25</text>
+            <circle class="pad" cx="20" cy="94" r="7"/><text x="34" y="98">GPIO22</text>
+            <circle class="pad" cx="20" cy="124" r="7"/><text x="34" y="128">GND</text>
+            <circle class="pad" cx="20" cy="154" r="7"/><text x="34" y="158">5V</text>
+          </g>
+          <circle class="pad" cx="110" cy="164" r="9"/><text x="110" y="146" text-anchor="middle" font-size="10.5" class="t-muted">hold BOOT = re-pair</text>
+        </g>
+
+        <!-- wires -->
+        <path class="w bclk" d="M330 266 H 630"/>
+        <path class="w ws"   d="M330 296 H 630"/>
+        <path class="w data" d="M330 326 H 630"/>
+        <path class="w gnd"  d="M330 356 H 630"/>
+        <path class="w v5"   d="M330 386 H 630"/>
+        <g font-size="11.5" font-weight="600">
+          <rect class="lbl-bg" x="421" y="252" width="118" height="16"/><text x="480" y="264" text-anchor="middle">BCLK 3.072 MHz</text>
+          <rect class="lbl-bg" x="414" y="282" width="133" height="16"/><text x="480" y="294" text-anchor="middle">WS / LRCK 48 kHz</text>
+          <rect class="lbl-bg" x="443" y="312" width="74" height="16"/><text x="480" y="324" text-anchor="middle">I2S DATA</text>
+          <rect class="lbl-bg" x="461" y="342" width="38" height="16"/><text x="480" y="354" text-anchor="middle">GND</text>
+          <rect class="lbl-bg" x="425" y="372" width="111" height="16"/><text x="480" y="384" text-anchor="middle">5V (optional)</text>
+        </g>
+        <text x="480" y="236" text-anchor="middle" font-size="11" class="t-muted">S3 is I2S master → ESP32 is slave</text>
+
+        <!-- headset + BT waves -->
+        <g transform="translate(748,40)">
+          <path class="outline" d="M10 70 V 52 A 50 50 0 0 1 110 52 V 70" stroke-width="5"/>
+          <rect class="chip" x="0" y="62" width="22" height="40" rx="8"/>
+          <rect class="chip" x="98" y="62" width="22" height="40" rx="8"/>
+          <text x="60" y="128" text-anchor="middle" font-size="11.5" class="t-muted">your BT headset</text>
+        </g>
+        <g transform="translate(790,190)">
+          <path class="wave"    d="M0 20 Q 18 0 36 20"/>
+          <path class="wave d2" d="M-8 32 Q 18 -6 44 32"/>
+          <path class="wave d3" d="M-16 44 Q 18 -12 52 44"/>
+        </g>
+        <text x="866" y="214" font-size="11" class="fill-accent" font-weight="600">A2DP / SBC</text>
+      </svg>
+    </div>
+    <p class="caption">Boards are drawn schematically. Find the pins by their silkscreen labels. Exact header positions differ between DevKit revisions and clones.</p>
+  </section>
+
+  <section>
+    <h2>Connections</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Wire</th><th>ESP32-S3</th><th>ESP32</th><th>What it carries</th></tr></thead>
+        <tbody>
+          <tr><td><span class="sw" style="background:var(--w-bclk)"></span>BCLK</td><td class="mono">GPIO5</td><td class="mono">GPIO26</td><td>Bit clock, 64 × 48 kHz = 3.072 MHz, driven by the S3</td></tr>
+          <tr><td><span class="sw" style="background:var(--w-ws)"></span>WS / LRCK</td><td class="mono">GPIO6</td><td class="mono">GPIO25</td><td>Left/right word select, 48 kHz</td></tr>
+          <tr><td><span class="sw" style="background:var(--w-data)"></span>DATA</td><td class="mono">GPIO7</td><td class="mono">GPIO22</td><td>Processed stereo, Philips I2S, 32-bit slots</td></tr>
+          <tr><td><span class="sw" style="background:var(--w-gnd)"></span>GND</td><td class="mono">GND</td><td class="mono">GND</td><td>Required. Without it the clock lines float.</td></tr>
+          <tr><td><span class="sw dash"></span>5V</td><td class="mono">5V</td><td class="mono">5V</td><td>Optional. Powers the ESP32 from the PC's USB.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="spec"><span><b>Format</b> I2S Philips, stereo</span><span><b>Rate</b> 48 kHz</span><span><b>Slots</b> 32-bit (16-bit audio in the top half)</span><span><b>Logic</b> 3.3 V on both sides</span></div>
+  </section>
+
+  <section>
+    <h2>Before you power it up</h2>
+    <div class="notes">
+      <div class="note"><h3>Which S3 port is which</h3><p>Plug the PC into the S3's <b>USB</b> port; that is the 5.1 sound card. Flash and read logs through the <b>UART</b> port. Both can be connected at once.</p></div>
+      <div class="note warn"><h3>Only one 5V source</h3><p>Connect the 5V wire only if the ESP32's own micro-USB is unplugged. Otherwise two USB supplies end up tied together. While you are flashing the ESP32, leave the 5V wire off.</p></div>
+      <div class="note"><h3>Keep it short</h3><p>BCLK runs at 3 MHz. Jumper wires under about 15 cm are fine. On longer runs, twist each signal with a ground wire or add a 33 Ω series resistor at the S3 end.</p></div>
+      <div class="note"><h3>Different pins</h3><p>Every pin can be changed in <code>idf.py menuconfig</code> on both boards. On the S3 avoid GPIO19/20 (USB), 0 (BOOT), 43/44 (UART) and 26–37 (flash/PSRAM). On the ESP32 avoid GPIO6–11.</p></div>
+      <div class="note"><h3>Buttons on the S3</h3><p>Tap BOOT to cycle Small, Medium and Large rooms. Hold it for 2 s to toggle <b>low-latency stereo</b>: a plain downmix with no room, about 40 ms less buffering. Two high beeps mean LL is on.</p></div>
+      <div class="note"><h3>Left and right reversed?</h3><p>Turn on <code>LHP_SWAP_LR</code> in the ESP32 transmitter's menuconfig.</p></div>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <span class="eyebrow">Single-board build</span>
+    <h2>Pico 2 W: nothing to wire</h2>
+    <p class="col">USB and Bluetooth are both on the board. BOOTSEL is the button at runtime: a single press cycles the rooms, a double press toggles low-latency stereo, and holding it for 2 s re-pairs. Holding BOOTSEL while you plug in still enters the UF2 bootloader as usual.</p>
+    <div class="figure" role="img" aria-label="Pico 2 W: optional button from GP15 to GND; UART logs on GP0.">
+      <svg viewBox="0 0 960 240" xmlns="http://www.w3.org/2000/svg">
+        <g transform="translate(220,40)">
+          <rect class="board" x="0" y="0" width="420" height="120" rx="8"/>
+          <rect class="usb" x="-10" y="44" width="22" height="32" rx="3"/>
+          <text x="-18" y="66" text-anchor="end" font-size="11" class="t-muted">USB → PC</text>
+          <rect class="chip" x="70" y="30" width="80" height="60" rx="3"/>
+          <text x="110" y="64" text-anchor="middle" font-size="11.5" font-weight="600">RP2350</text>
+          <rect class="chip" x="250" y="25" width="110" height="70" rx="3"/>
+          <text x="305" y="58" text-anchor="middle" font-size="11.5" font-weight="600">CYW43439</text>
+          <text x="305" y="75" text-anchor="middle" font-size="10.5" class="t-muted">BT Classic</text>
+          <circle class="pad" cx="190" cy="92" r="9"/><text x="190" y="114" text-anchor="middle" font-size="10.5" class="t-muted">BOOTSEL: room · 2× LL</text>
+          <circle class="pad" cx="30" cy="12" r="6"/><text x="30" y="-6" text-anchor="middle" font-size="11">GP0</text>
+          <circle class="pad" cx="395" cy="108" r="6"/><text x="395" y="94" text-anchor="middle" font-size="11">GP15</text>
+          <circle class="pad" cx="365" cy="108" r="6"/><text x="365" y="94" text-anchor="middle" font-size="11">GND</text>
+        </g>
+        <path class="w data" d="M615 148 V 180 H 690"/><path class="w gnd" d="M585 148 V 190 H 690"/>
+        <g transform="translate(690,170)"><rect class="outline" x="0" y="0" width="54" height="30" rx="4"/><circle class="pin" cx="27" cy="15" r="7"/></g>
+        <text x="717" y="226" text-anchor="middle" font-size="11.5" class="t-muted">optional button (-DLHP_BUTTON_GPIO=15)</text>
+        <text x="250" y="22" font-size="11.5" class="t-muted">GP0 = UART TX logs, 115200 baud</text>
+      </svg>
+    </div>
+  </section>
+
+  <hr>
+
+  <section>
+    <span class="eyebrow">LE Audio build</span>
+    <h2>ESP32-S3 + nRF5340 DK</h2>
+    <p class="col">Use this one for LE Audio headsets such as the Sony WF-1000XM5 or WH-1000XM6. The S3 is the same USB 5.1 card running the same rooms. The nRF5340 DK runs Nordic's <code>nrf_audio</code> unicast client, encodes LC3 and talks to the headset. Here the <b>nRF is the I2S clock master</b> and the S3 follows its clock, so the clock wires point the other way from the ESP32 build.</p>
+    <div class="figure" role="img" aria-label="Wiring diagram: nRF5340 DK P1.07 (SCK) to ESP32-S3 GPIO5, P1.05 (LRCK) to GPIO6, ESP32-S3 GPIO7 to P1.09 (SDIN), ground to ground. The DK is powered by its own USB. The S3's USB port goes to the PC; the nRF5340 talks LE Audio to the headset.">
+      <svg viewBox="0 0 960 470" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrL" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--muted)"/></marker>
+        </defs>
+        <!-- PC -->
+        <g transform="translate(28,34)">
+          <rect class="outline" x="0" y="0" width="120" height="76" rx="5"/>
+          <rect class="chip" x="10" y="10" width="100" height="52" rx="2"/>
+          <rect class="outline" x="44" y="76" width="32" height="10"/>
+          <rect class="outline" x="30" y="86" width="60" height="6" rx="2"/>
+          <text x="60" y="41" text-anchor="middle" font-size="13" font-weight="600">PC</text>
+          <text x="60" y="114" text-anchor="middle" font-size="11.5" class="t-muted">plays 5.1 audio</text>
+        </g>
+        <path class="cable" d="M88 152 C 88 200, 150 210, 150 232"/>
+        <text x="80" y="204" text-anchor="end" font-size="11" class="t-muted">USB-C</text>
+
+        <!-- ESP32-S3 board -->
+        <g transform="translate(60,232)">
+          <rect class="board" x="0" y="0" width="290" height="190" rx="8"/>
+          <rect class="usb" x="70" y="-8" width="34" height="14" rx="3"/>
+          <text x="87" y="-14" text-anchor="middle" font-size="10.5" font-weight="600">USB</text>
+          <rect class="usb" x="160" y="-8" width="34" height="14" rx="3"/>
+          <text x="177" y="-14" text-anchor="middle" font-size="10.5" class="t-muted">UART</text>
+          <rect class="chip" x="30" y="40" width="110" height="80" rx="3"/>
+          <text x="85" y="76" text-anchor="middle" font-size="12" font-weight="600">ESP32-S3</text>
+          <text x="85" y="93" text-anchor="middle" font-size="10.5" class="t-muted">USB + DSP</text>
+          <text x="14" y="176" font-size="12" class="t-title">ESP32-S3-DevKitC-1</text>
+          <g font-size="12">
+            <circle class="pad" cx="270" cy="34" r="7"/><text x="256" y="38" text-anchor="end">GPIO5</text>
+            <circle class="pad" cx="270" cy="64" r="7"/><text x="256" y="68" text-anchor="end">GPIO6</text>
+            <circle class="pad" cx="270" cy="94" r="7"/><text x="256" y="98" text-anchor="end">GPIO7</text>
+            <circle class="pad" cx="270" cy="124" r="7"/><text x="256" y="128" text-anchor="end">GND</text>
+          </g>
+          <circle class="pad" cx="200" cy="150" r="9"/><text x="186" y="154" text-anchor="end" font-size="10.5" class="t-muted">BOOT: tap room · hold LL</text>
+        </g>
+
+        <!-- nRF5340 DK -->
+        <g transform="translate(610,232)">
+          <rect class="board" x="0" y="0" width="290" height="190" rx="8"/>
+          <rect class="usb" x="128" y="182" width="34" height="14" rx="3"/>
+          <text x="145" y="214" text-anchor="middle" font-size="10.5" class="t-muted">J2 USB (power / flash / logs)</text>
+          <rect class="chip" x="150" y="34" width="110" height="80" rx="3"/>
+          <text x="205" y="70" text-anchor="middle" font-size="12" font-weight="600">nRF5340</text>
+          <text x="205" y="87" text-anchor="middle" font-size="10.5" class="t-muted">LE Audio / LC3</text>
+          <text x="138" y="140" font-size="12" class="t-title">nRF5340 DK</text>
+          <text x="138" y="156" font-size="10.5" class="t-muted">Button 1/2 vol · 4 mute</text>
+          <g font-size="12">
+            <circle class="pad" cx="20" cy="34" r="7"/><text x="34" y="38">P1.07</text>
+            <circle class="pad" cx="20" cy="64" r="7"/><text x="34" y="68">P1.05</text>
+            <circle class="pad" cx="20" cy="94" r="7"/><text x="34" y="98">P1.09</text>
+            <circle class="pad" cx="20" cy="124" r="7"/><text x="34" y="128">GND</text>
+          </g>
+        </g>
+
+        <!-- wires: clocks from nRF to S3, data from S3 to nRF -->
+        <path class="w bclk" d="M630 266 H 330"/>
+        <path class="w ws"   d="M630 296 H 330"/>
+        <path class="w data" d="M330 326 H 630"/>
+        <path class="w gnd"  d="M330 356 H 630"/>
+        <g font-size="11.5" font-weight="600">
+          <rect class="lbl-bg" x="417" y="252" width="126" height="16"/><text x="480" y="264" text-anchor="middle">◀ SCK 1.536 MHz</text>
+          <rect class="lbl-bg" x="425" y="282" width="111" height="16"/><text x="480" y="294" text-anchor="middle">◀ LRCK 48 kHz</text>
+          <rect class="lbl-bg" x="436" y="312" width="89" height="16"/><text x="480" y="324" text-anchor="middle">I2S DATA ▶</text>
+          <rect class="lbl-bg" x="461" y="342" width="38" height="16"/><text x="480" y="354" text-anchor="middle">GND</text>
+        </g>
+        <text x="480" y="236" text-anchor="middle" font-size="11" class="t-muted">nRF5340 is I2S master → S3 is slave</text>
+        <text x="480" y="392" text-anchor="middle" font-size="11" class="t-muted">no power wire:</text><text x="480" y="407" text-anchor="middle" font-size="11" class="t-muted">each board has its own USB</text>
+
+        <!-- headset + waves -->
+        <g transform="translate(748,40)">
+          <path class="outline" d="M10 70 V 52 A 50 50 0 0 1 110 52 V 70" stroke-width="5"/>
+          <rect class="chip" x="0" y="62" width="22" height="40" rx="8"/>
+          <rect class="chip" x="98" y="62" width="22" height="40" rx="8"/>
+          <text x="60" y="128" text-anchor="middle" font-size="11.5" class="t-muted">LE Audio headset</text>
+        </g>
+        <g transform="translate(790,190)">
+          <path class="wave"    d="M0 20 Q 18 0 36 20"/>
+          <path class="wave d2" d="M-8 32 Q 18 -6 44 32"/>
+          <path class="wave d3" d="M-16 44 Q 18 -12 52 44"/>
+        </g>
+        <text x="848" y="214" font-size="11" class="fill-accent" font-weight="600">LE Audio / LC3</text>
+      </svg>
+    </div>
+    <p class="caption">P1.07, P1.05 and P1.09 are on the DK's P1 header. On the S3, flash with <code>sdkconfig.defaults.nrf5340</code> so it runs I2S as a 16-bit slave.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Wire</th><th>nRF5340 DK</th><th>ESP32-S3</th><th>What it carries</th></tr></thead>
+        <tbody>
+          <tr><td><span class="sw" style="background:var(--w-bclk)"></span>SCK</td><td class="mono">P1.07</td><td class="mono">GPIO5</td><td>Bit clock, 32 × 48 kHz = 1.536 MHz, driven by the nRF</td></tr>
+          <tr><td><span class="sw" style="background:var(--w-ws)"></span>LRCK</td><td class="mono">P1.05</td><td class="mono">GPIO6</td><td>Word select, 48 kHz, driven by the nRF</td></tr>
+          <tr><td><span class="sw" style="background:var(--w-data)"></span>SDIN ← DATA</td><td class="mono">P1.09</td><td class="mono">GPIO7</td><td>Processed stereo from the S3, Philips I2S, 16-bit slots</td></tr>
+          <tr><td><span class="sw" style="background:var(--w-gnd)"></span>GND</td><td class="mono">GND</td><td class="mono">GND</td><td>Required</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <div class="note warn"><h3>Leave the DK at 3 V</h3><p>Keep the DK's VDD switch on its default 3 V setting (not 1.8 V). The S3's 3.3 V I/O and the nRF's 3 V I/O read each other fine at that level.</p></div>
+      <div class="note"><h3>Check the headset first</h3><p>The headset needs LE Audio turned on in its own app, and it must accept a unicast connection from a non-phone source. Set its name in <code>overlay-lakehp.conf</code>.</p></div>
+      <div class="note"><h3>Latency</h3><p>Rooms: about 35 ms in the S3 plus about 40–60 ms over the LE Audio link. Low-latency stereo cuts the S3 part to under 20 ms.</p></div>
+    </div>
+  </section>
+</div>
+</body></html>

@@ -1,0 +1,26 @@
+build*/
+firmware/generated/lakehp_filters.h
+firmware/esp32s3_usb_dsp/components/tinyusb/
+firmware/*/sdkconfig
+firmware/*/sdkconfig.old
+firmware/*/managed_components/
+firmware/*/build/
+bins/
+*.wav
+
+# host test / tool binaries
+test/pipeline_test
+test/stall_test
+test/lowlat_test
+test/resampler_test
+test/surround_test
+test/surround71_test
+test/host_run
+test/host_run_half
+test/lhp_wav
+lhp_wav
+*.o
+# firmware images and filter data never go in the repo
+*.uf2
+*.dll
+*.s16

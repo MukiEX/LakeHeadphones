@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LakeHP Flasher</title>
+<style>
+:root {
+  --bg: #f4f5f1; --panel: #ffffff; --ink: #1b2220; --muted: #5d6762; --line: #d9ddd6;
+  --accent: #0b6e4f; --accent-ink: #ffffff; --warn: #a1361f; --ok: #0b6e4f; --code: #eef1ec;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121715; --panel: #1a211f; --ink: #e6ece8; --muted: #9aa7a0; --line: #2c3632;
+    --accent: #4cc79a; --accent-ink: #0d1a14; --warn: #ff8a70; --ok: #4cc79a; --code: #222b28;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121715; --panel: #1a211f; --ink: #e6ece8; --muted: #9aa7a0; --line: #2c3632;
+  --accent: #4cc79a; --accent-ink: #0d1a14; --warn: #ff8a70; --ok: #4cc79a; --code: #222b28;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); }
+body { margin: 0; color: var(--ink); font: 16px/1.55 var(--sans); padding: 40px max(16px, env(safe-area-inset-left)) 64px; }
+main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1 { font-size: clamp(28px, 5vw, 38px); line-height: 1.1; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 19px; margin: 0 0 6px; }
+p { margin: 0; }
+.lede { color: var(--muted); font-size: 17px; }
+.eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.step { display: flex; gap: 14px; align-items: flex-start; }
+.num { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font: 700 14px var(--mono); }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 26px 16px; text-align: center; cursor: pointer; color: var(--muted); transition: border-color .15s, background .15s; }
+.drop.over, .drop:hover { border-color: var(--accent); }
+.drop.done { border-style: solid; border-color: var(--ok); color: var(--ink); }
+.drop input { display: none; }
+.drop b { color: var(--ink); }
+button, .btn { font: 600 15px var(--sans); border: 0; border-radius: 8px; padding: 12px 18px; background: var(--accent); color: var(--accent-ink); cursor: pointer; text-decoration: none; display: inline-block; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.secondary, .btn.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+label.opt { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 15px; }
+.log { font: 13px/1.5 var(--mono); background: var(--code); border-radius: 8px; padding: 12px 14px; white-space: pre-wrap; word-break: break-word; min-height: 2.5em; }
+.err { color: var(--warn); }
+.okc { color: var(--ok); }
+ol { margin: 0; padding-left: 20px; }
+li { margin: 4px 0; }
+code { font-family: var(--mono); font-size: 14px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+details summary { cursor: pointer; color: var(--muted); }
+.fine { color: var(--muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:10px">
+    <span class="eyebrow">Pico 2 W · no compiler needed</span>
+    <h1>LakeHP flasher</h1>
+    <p class="lede">Turns your own copy of the original headphone DLL into a ready-to-flash firmware for the Pico 2 W build of LakeHP. Everything happens in this browser tab: the DLL is never uploaded anywhere.</p>
+  </header>
+
+  <section class="card">
+    <div class="step"><span class="num">1</span><div><h2>Drop your DLL</h2>
+      <p class="fine">The Lake Technology headphone engine DLL, version 1.20.0276 (the file name varies, e.g. randoapp.dll). Only its 48 kHz room filters are used.</p></div></div>
+    <label class="drop" id="dllDrop"><input type="file" id="dllInput"><span id="dllText"><b>Choose the DLL</b> or drop it here</span></label>
+    <div class="log" id="dllLog">No DLL yet.</div>
+  </section>
+
+  <section class="card">
+    <div class="step"><span class="num">2</span><div><h2>Pick a firmware</h2>
+      <p class="fine">Built in: LakeHP __FW_VERSION__ for the Raspberry Pi Pico 2 W.</p></div></div>
+    <label class="opt"><input type="radio" name="fw" value="normal" checked> Normal (recommended)</label>
+    <label class="opt"><input type="radio" name="fw" value="debug"> Debug: adds a USB serial port with a status log</label>
+    <label class="opt"><input type="radio" name="fw" value="custom"> My own build (a UF2 compiled without <code>lakehp_filters.h</code>)</label>
+    <label class="drop" id="uf2Drop" hidden><input type="file" id="uf2Input" accept=".uf2"><span id="uf2Text"><b>Choose your UF2</b> or drop it here</span></label>
+  </section>
+
+  <section class="card">
+    <div class="step"><span class="num">3</span><div><h2>Build and flash</h2></div></div>
+    <div class="row"><button id="buildBtn" disabled>Build lakehp_pico2w_ready.uf2</button></div>
+    <div class="log" id="buildLog">Waiting for the DLL.</div>
+    <ol>
+      <li>Hold <b>BOOTSEL</b> on the Pico 2 W while plugging it into USB. A drive called <b>RP2350</b> appears.</li>
+      <li>Drag the downloaded <code>.uf2</code> onto that drive. The Pico restarts by itself.</li>
+      <li>Settings: open <b>http://192.168.20.1</b> while the Pico is plugged in (Windows or Linux).</li>
+      <li>Put your headset in pairing mode, close to the Pico. After a few seconds it picks the nearest headphones, and you hear two rising tones. LED: fast flicker = pairing, a blip each second = reconnecting to the remembered headset, slow blink = connected, solid = playing.</li>
+    </ol>
+    <p class="fine">The filters sit in their own flash area (0x10300000), so later firmware updates can be flashed on their own without redoing this step.</p>
+  </section>
+
+  <section class="card">
+    <h2>Controls</h2>
+    <ol style="list-style:none;padding:0">
+      <li><b>1 press</b>: next room (Small, Medium, Large)</li>
+      <li><b>2 presses</b>: low-latency stereo on/off (skips the rooms)</li>
+      <li><b>3 presses</b>: USB mode 5.1/7.1 ↔ stereo (for Switch and other consoles; restarts, remembered). Pick 5.1 or 7.1 on the settings page</li>
+      <li><b>4 presses</b>: speaker placement Factory ↔ Theater (surrounds 136°, 7.1 rears 150°); 1 low beep = Factory, 2 = Theater</li>
+      <li><b>5 presses</b>: settings page adapter on/off. With it on, open <b>http://192.168.20.1</b> for stereo/5.1/7.1, rooms and the live Surround lab</li>
+      <li><b>hold 2 s</b>: forget the headset and pair a new one</li>
+      <li><b>Headset buttons</b>: play/pause, next and previous act as the PC's media keys</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>Source code</h2>
+    <p>The full project: engine, all three firmware builds, tools, tests and docs. No filter data is included.</p>
+    <div class="row"><button class="secondary" id="srcBtn">Download lakehp-5.1-virtualizer.zip</button></div>
+  </section>
+
+  <p class="fine">Dolby and Dolby Headphone are trademarks of Dolby Laboratories. This is an independent interoperability project for personal use. This page contains no code or data from the DLL; the filters come from the DLL you provide.</p>
+</main>
+
+<script id="payload-normal" type="application/octet-stream">__FW_NORMAL__</script>
+<script id="payload-debug" type="application/octet-stream">__FW_DEBUG__</script>
+<script id="payload-src" type="application/octet-stream">__SRC_ZIP__</script>
+<script id="core">
+/* ---- core logic (mirrors tools/extract_filters.py; tested against it) ---- */
+const LHP = (() => {
+  const RATES = {0: 48000, 1: 44100, 2: 32000, 3: 22050, 4: 16000, 5: 11025, 6: 8000, 16: 192000, 17: 96000, [-1]: 0xFFFFFFFF};
+  const REGION_ADDR = 0x10300000;
+  const UF2 = [0x0A324655, 0x9E5D5157, 0x0AB16F30], FAM_ABS = 0xE48BFF57;
+  const s8 = b => (b > 127 ? b - 256 : b);
+
+  function parseHeader(d, dv, off) {
+    if (off + 0x60 > d.length) return null;
+    const ver = d[off];
+    if (ver !== 1 && ver !== 2) return null;
+    const total = dv.getUint32(off + 1, true);
+    if (total < 0x40 || total > 0x40000 || off + total > d.length) return null;
+    const hlen = dv.getUint16(off + 5, true);
+    if (hlen < 0x30 || hlen > 0x200 || hlen >= total) return null;
+    let p = off + 7;
+    const room = s8(d[p + 2]), rc = s8(d[p + 3]), flags = d[p + 4], maxbits = s8(d[p + 5]);
+    p += 6;
+    if (!(rc in RATES) || room < 0 || room > 3) return null;
+    let scale = maxbits;
+    if (ver >= 2) { scale = s8(d[p]); p += 1; }
+    if (!(maxbits >= 1 && maxbits <= 32 && scale >= 1 && scale <= 31)) return null;
+    p += 10 + 24 + 20 + 1;
+    const nlen = s8(d[p]) + 1; p += 1;
+    if (nlen < 0 || p + nlen > d.length) return null;
+    let name = "";
+    for (let i = 0; i < nlen && d[p + i]; i++) name += String.fromCharCode(d[p + i]);
+    p += nlen;
+    if (p - off !== hlen) return null;
+    return {off, total, room, rate: RATES[rc], flags, name};
+  }
+
+  function scan(d) {
+    const dv = new DataView(d.buffer, d.byteOffset, d.byteLength), found = [];
+    for (let off = 0; off < d.length - 0x60;) {
+      const h = parseHeader(d, dv, off);
+      if (h) { found.push(h); off += h.total; } else off++;
+    }
+    return found;
+  }
+
+  function fileVersion(d) {
+    const key = "FileVersion";
+    outer: for (let i = 0; i < d.length - 64; i++) {
+      for (let k = 0; k < key.length; k++) if (d[i + 2 * k] !== key.charCodeAt(k) || d[i + 2 * k + 1]) continue outer;
+      let s = "";
+      for (let j = i + 24; j < i + 24 + 64; j += 2) { const c = d[j] | (d[j + 1] << 8); if (!c) { if (s) break; continue; } s += String.fromCharCode(c); }
+      return s.trim();
+    }
+    return null;
+  }
+
+  const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+  function buildRegion(d, sel) {
+    const n = sel.length, head = 20 + 16 * n;
+    let size = head;
+    for (const h of sel) size += h.total + (-h.total & 3);
+    const out = new Uint8Array(size), dv = new DataView(out.buffer);
+    let off = head;
+    sel.forEach((h, i) => {
+      const e = 20 + 16 * i;
+      dv.setUint32(e, h.rate, true); dv.setUint32(e + 4, h.room, true);
+      dv.setUint32(e + 8, off, true); dv.setUint32(e + 12, h.total, true);
+      out.set(d.subarray(h.off, h.off + h.total), off);
+      off += h.total + (-h.total & 3);
+    });
+    dv.setUint32(0, 0x4650484C, true); dv.setUint32(4, 1, true); dv.setUint32(8, n, true);
+    dv.setUint32(12, size, true); dv.setUint32(16, crc32(out.subarray(20)), true);
+    return out;
+  }
+
+  function addRegion(base, region) {
+    if (base.length % 512) throw new Error("the firmware UF2 has a partial block");
+    const blocks = [], fams = new Map();
+    for (let i = 0; i < base.length; i += 512) {
+      const b = base.slice(i, i + 512), dv = new DataView(b.buffer);
+      if (dv.getUint32(0, true) !== UF2[0] || dv.getUint32(4, true) !== UF2[1] || dv.getUint32(508, true) !== UF2[2])
+        throw new Error("that file is not a UF2 firmware");
+      const addr = dv.getUint32(12, true), size = dv.getUint32(16, true), fam = dv.getUint32(28, true);
+      if (fam !== FAM_ABS) {
+        fams.set(fam, (fams.get(fam) || 0) + 1);
+        if (addr + size > REGION_ADDR && addr < REGION_ADDR + region.length)
+          throw new Error("the firmware overlaps the filter area - is this a LakeHP Pico 2 W build?");
+      }
+      blocks.push(b);
+    }
+    if (!fams.size) throw new Error("the UF2 contains no firmware");
+    const fam = [...fams.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const padded = new Uint8Array(region.length + (-region.length & 255)).fill(0xFF);
+    padded.set(region);
+    for (let i = 0; i < padded.length; i += 256) {
+      const b = new Uint8Array(512), dv = new DataView(b.buffer);
+      dv.setUint32(0, UF2[0], true); dv.setUint32(4, UF2[1], true); dv.setUint32(8, 0x2000, true);
+      dv.setUint32(12, REGION_ADDR + i, true); dv.setUint32(16, 256, true); dv.setUint32(28, fam, true);
+      b.set(padded.subarray(i, i + 256), 32);
+      dv.setUint32(508, UF2[2], true);
+      blocks.push(b);
+    }
+    const main = blocks.filter(b => new DataView(b.buffer).getUint32(28, true) === fam);
+    main.forEach((b, i) => { const dv = new DataView(b.buffer); dv.setUint32(20, i, true); dv.setUint32(24, main.length, true); });
+    const out = new Uint8Array(blocks.length * 512);
+    blocks.forEach((b, i) => out.set(b, i * 512));
+    return out;
+  }
+
+  function roomFilters(found) { return found.filter(h => h.room >= 1 && h.room <= 3 && h.rate === 48000); }
+  return {scan, fileVersion, buildRegion, addRegion, roomFilters};
+})();
+if (typeof module !== "undefined") module.exports = LHP;
+</script>
+<script>
+/* ---- page wiring ---- */
+const $ = id => document.getElementById(id);
+const b64 = id => { const s = $(id).textContent.trim(), bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+const save = (bytes, name, type) => {
+  const url = URL.createObjectURL(new Blob([bytes], {type}));
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+};
+let dll = null, rooms = null, customUf2 = null;
+
+function hookDrop(dropId, inputId, onFile) {
+  const drop = $(dropId), input = $(inputId);
+  input.addEventListener("change", () => input.files[0] && onFile(input.files[0]));
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && onFile(e.dataTransfer.files[0]); });
+}
+
+function refresh() {
+  const fw = document.querySelector('input[name="fw"]:checked').value;
+  $("uf2Drop").hidden = fw !== "custom";
+  const ready = rooms && rooms.length === 3 && (fw !== "custom" || customUf2);
+  $("buildBtn").disabled = !ready;
+  if (!rooms) $("buildLog").textContent = "Waiting for the DLL.";
+  else if (fw === "custom" && !customUf2) $("buildLog").textContent = "Choose your UF2 file.";
+  else if (ready) $("buildLog").textContent = "Ready.";
+}
+
+hookDrop("dllDrop", "dllInput", async f => {
+  const log = $("dllLog");
+  try {
+    const d = new Uint8Array(await f.arrayBuffer());
+    if (d[0] !== 0x4D || d[1] !== 0x5A) throw new Error("not a Windows DLL");
+    const found = LHP.scan(d), sel = LHP.roomFilters(found);
+    const ver = LHP.fileVersion(d);
+    if (!found.length) throw new Error("no Lake filter data found - is this the right DLL (version 1.20.0276)?");
+    if (sel.length !== 3) throw new Error(`found ${found.length} filters but not all three 48 kHz rooms`);
+    dll = d; rooms = sel;
+    $("dllDrop").classList.add("done");
+    $("dllText").innerHTML = `<b>${f.name.replace(/[<>&]/g, "")}</b> loaded`;
+    log.innerHTML = `<span class="okc">OK</span> version ${ver || "?"}, ${found.length} filter sets found.\n` +
+      sel.map(h => `  ${h.name}: ${h.rate} Hz, ${h.total} bytes`).join("\n");
+  } catch (e) {
+    dll = rooms = null; $("dllDrop").classList.remove("done");
+    log.innerHTML = `<span class="err">${e.message}</span>`;
+  }
+  refresh();
+});
+hookDrop("uf2Drop", "uf2Input", async f => {
+  customUf2 = new Uint8Array(await f.arrayBuffer());
+  $("uf2Drop").classList.add("done");
+  $("uf2Text").innerHTML = `<b>${f.name.replace(/[<>&]/g, "")}</b> loaded`;
+  refresh();
+});
+document.querySelectorAll('input[name="fw"]').forEach(r => r.addEventListener("change", refresh));
+
+$("buildBtn").addEventListener("click", () => {
+  const fw = document.querySelector('input[name="fw"]:checked').value;
+  try {
+    const base = fw === "custom" ? customUf2 : b64(fw === "debug" ? "payload-debug" : "payload-normal");
+    const region = LHP.buildRegion(dll, rooms);
+    const out = LHP.addRegion(base, region);
+    const name = fw === "debug" ? "lakehp_pico2w_debug_ready.uf2" : "lakehp_pico2w_ready.uf2";
+    save(out, name, "application/octet-stream");
+    $("buildLog").innerHTML = `<span class="okc">Saved ${name}</span> (${(out.length / 1024).toFixed(0)} KB: firmware + ${(region.length / 1024).toFixed(0)} KB of room filters).`;
+  } catch (e) {
+    $("buildLog").innerHTML = `<span class="err">${e.message}</span>`;
+  }
+});
+$("srcBtn").addEventListener("click", () => save(b64("payload-src"), "lakehp-5.1-virtualizer.zip", "application/zip"));
+refresh();
+</script>
+</body>
+</html>
