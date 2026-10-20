@@ -25,9 +25,13 @@ The filters go into their own flash area (0x10300000), separate from the firmwar
 
 To regenerate the page after changing the firmware: `python3 tools/make_flasher.py --normal <uf2> --debug <debug uf2> --src <zip>`. Both UF2s must be built without `lakehp_filters.h`.
 
+## Open room filters (no original DLL needed)
+
+[`filters/LakeHP_OpenRooms.dll`](filters/) is a drop-in stand-in for the original DLL, built from the open SONICOM HRTF dataset (CC BY-SA 3.0). It has three rooms (Open Small / Medium / Large) at 48 and 44.1 kHz, loudness-matched to the original's rooms, in the same filter format. Use it anywhere the original goes: the flasher page, `extract_filters.py`, the Jellyfin filter, neko. To build it again from another head or with other rooms, use `tools/make_open_filters.py`; details are in [filters/README.md](filters/README.md).
+
 ## 0. Filter data (for building from source)
 
-No filter data is included in this repo. Extract it from **your own** copy of the DLL:
+The original filters are not included in this repo. Extract them from **your own** copy of the DLL, or use the open DLL above:
 
 ```sh
 python3 tools/extract_filters.py /path/to/DolbyHph.dll --rates 48000 -o firmware/generated/lakehp_filters.h
@@ -193,13 +197,14 @@ cc -O2 -o resampler_test test/resampler_test.c firmware/common/resampler.c -lm &
 
 ```
 engine/            lakehp.c/.h        portable headphone engine (no filter data)
-tools/             extract_filters.py vendor_tinyusb_s3.py lhp_wav.c
+tools/             extract_filters.py make_open_filters.py vendor_tinyusb_s3.py lhp_wav.c
                    flasher_template.html + make_flasher.py -> lakehp_flasher.html
 firmware/common/   dh_pipeline (rings, rate lock, rooms, beeps), usb_audio51 (UAC2 5.1), resampler
 firmware/pico2w/   single-board build (TinyUSB + BTstack A2DP source)
 firmware/esp32s3_usb_dsp/  ESP32-S3: USB + DSP -> I2S
 firmware/esp32_a2dp_tx/    ESP32:  I2S -> A2DP (Bluedroid)
 firmware/nrf5340_le_audio/ nRF5340 DK: overlay for Nordic nrf_audio (I2S -> LE Audio unicast)
+filters/           LakeHP_OpenRooms.dll (open room filters, CC BY-SA 3.0) + README
 docs/TECHNICAL.md          full technical breakdown
 docs/DECOMPILATION.md      engine internals and the filter blob format
 docs/wiring.html, docs/wiring_*.svg   wiring diagrams for all three builds

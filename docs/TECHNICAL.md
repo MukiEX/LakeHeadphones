@@ -21,6 +21,7 @@ This document describes the final configuration: a 5.1/7.1 USB headphone virtual
 15. [Memory and CPU budget](#15-memory-and-cpu-budget)
 16. [Verification status](#16-verification-status)
 17. [File map](#17-file-map)
+18. [Open room filters](#18-open-room-filters)
 
 ---
 
@@ -111,7 +112,7 @@ The FFT is a plain radix-2 decimation-in-time transform with bit-reversed input,
 
 ## 3. Filter data handling
 
-No deliverable contains filter data. The filters always come from the user's own DLL.
+No deliverable contains the original's filter data. Filters come either from the user's own DLL or from the project's open stand-in DLL, built from the SONICOM data ([section 18](#18-open-room-filters)).
 
 **Flash filter region**
 - Location: `0x10300000` (flash offset `0x300000`), up to 512 KB. It sits apart from the firmware, so firmware-only updates keep the filters.
@@ -687,7 +688,8 @@ firmware/esp32s3_usb_dsp/        ESP32-S3 USB + DSP → I2S
 firmware/esp32_a2dp_tx/          ESP32 I2S → A2DP
 firmware/nrf5340_le_audio/       nrf_audio overlay + README
 tools/                           extract_filters.py, make_flasher.py, flasher_template.html,
-                                 lhp_wav.c, vendor_tinyusb_s3.py
+                                 lhp_wav.c, vendor_tinyusb_s3.py, make_open_filters.py
+filters/                         LakeHP_OpenRooms.dll (open rooms, CC BY-SA 3.0) + README
 test/                            pipeline, stall, lowlat, resampler, surround, surround71; host_run
 docs/                            TECHNICAL.md, DECOMPILATION.md, wiring.html, wiring SVGs
 ```
@@ -700,3 +702,65 @@ cmake --build build-pico -j
 ```
 
 This needs pico-sdk 2.3.x with the `tinyusb`, `btstack`, `cyw43-driver` and `lwip` submodules.
+
+---
+
+## 18. Open room filters
+
+`filters/LakeHP_OpenRooms.dll` is a stand-in for the original DLL built only from open data: the SONICOM HRTF dataset, CC BY-SA 3.0. It needs no original DLL, and everything that imports the original imports it unchanged.
+
+### Container
+
+- A valid PE32 DLL ("MZ"/"PE", i386, DLL flag) with no code and no entry point; resource-only DLLs are allowed one.
+- It has two sections:
+  - `.rdata`: a licence notice, then six filter blobs (three rooms × 48/44.1 kHz) in the original blob format (version 2, 20-bit max, per-group exponents).
+  - `.rsrc`: a VERSIONINFO resource (FileVersion 1.0.0.0, product "LakeHP open room filters", copyright line naming SONICOM / CC BY-SA 3.0).
+- Consumers only need the `MZ` signature plus scannable blobs. Verified with:
+  - `extract_filters.py`: `--list`, `--uf2`, `--region`, header output;
+  - the flasher page: byte-identical UF2 to the Python build;
+  - the Pico region parser and room loading;
+  - the Jellyfin `af_lakehp` source scanner;
+  - neko's `lhp_dll_scan`/`lhp_dll_find` at 44.1 and 48 kHz;
+  - neko's 7.1 test suite (all pass).
+
+### Filter design (`tools/make_open_filters.py`)
+
+| Part | How it's built |
+|---|---|
+| HRTF set | SONICOM p0010 (48 kHz, 256 taps, 828 directions, 5° azimuth grid). It is the most typical of the 30 tutorial subjects: 1.3 dB RMS from the group average at the five speaker directions. |
+| Speakers | L/R ±30°, C 0°, Ls/Rs ±120° (elevation 0) |
+| Headphone EQ | Inverse diffuse-field power average (cos-elevation weighted, both ears, 1/3-octave smoothed). Limits: ±15 dB (+8 dB above 16 kHz), 12 dB/oct roll-off below 40 Hz. Realized as a 512-tap minimum-phase filter. |
+| Direct filters (1024 taps) | Measured response + image-source early reflections (orders 2–3) inside a shoebox room. Each reflection uses the measured response for its own direction, scaled by distance × wall reflection^order, with a gentle HF loss per bounce. 4-point Lagrange fractional delays, 64-sample fade at the end. |
+| Late tail (6 × 1024 per ear) | 96 Fibonacci-sphere directions, each its own Gaussian noise convolved with that direction's response, summed. Split into 4 bands with their own RT60. 2 ms fade-in at 21 ms; the last partition fades out (ends at 149 ms). |
+| Tail bins | Partition counts 6/5/4/3/2/1 with cut-offs at bins 128/192/256/320/384. That is 6 partitions up to ~6 kHz, using 3584 of the engine's 4096 coefficient slots. |
+| 44.1 kHz | Resampled from the 48 kHz design (147/160 polyphase), then the per-rate level trim. |
+
+### Rooms
+
+| Room | Size (m) | Speaker distance | Wall reflection / order | RT60 125/500/2k/8k (s) | Direct/tail |
+|---|---|---|---|---|---|
+| Open Small | 4.2 × 3.8 × 2.6 | 1.4 m | 0.62 / 3 | 0.20 / 0.17 / 0.14 / 0.09 | 13 dB |
+| Open Medium | 6.5 × 5.2 × 2.9 | 2.0 m | 0.28 / 2 | 0.30 / 0.26 / 0.21 / 0.13 | 15 dB |
+| Open Large | 9.5 × 7.5 × 3.6 | 2.6 m | 0.92 / 3 | 0.21 / 0.19 / 0.15 / 0.10 | 10 dB |
+
+The listener sits at 55% of the room length, centred, with ears 1.2 m up.
+
+### Calibration against the original
+
+Only measurements of the original's output were used; none of its data is used.
+
+| | Original | Open |
+|---|---|---|
+| Small: early(2 ms)/rest, direct/tail, −30 dB | +5.8, +13.5 dB, 73 ms | +6.5, +13.0 dB, 78 ms |
+| Medium | +12.2, +15.2 dB, 97 ms | +11.3, +15.0 dB, 94 ms |
+| Large | +3.1, +9.8 dB, 91 ms | +3.9, +10.0 dB, 91 ms |
+| Front direct ITD / ILD | 0.29 ms / 10.0 dB | 0.29 ms / 9.3 dB |
+| Surround direct ITD / ILD | 0.60 ms / 14.9 dB | 0.60 ms / 14.0 dB |
+| Surround at 100/118/136/150° (ITD, samples) | 31 / 24 / 17 / 12 | 31 / 23 / 17 / 11 |
+
+- **Loudness:** K-weighted 5.1 pink noise (fronts 0 dB, surrounds −3 dB, LFE −6 dB) matches within 0.01 dB per room, at both rates. On a music track each room lands within 0.8 dB of the original.
+- **Tone:** within about ±2 dB from 125 Hz to 16 kHz. Open Large has about +4 dB at 63 Hz.
+
+### Licence
+
+The filters are derived from the SONICOM data and distributed under CC BY-SA 3.0 with attribution (Imperial College London). The generator script is under the project's licence. Details: [filters/README.md](../filters/README.md).

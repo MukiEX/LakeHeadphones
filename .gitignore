@@ -24,3 +24,4 @@ lhp_wav
 *.uf2
 *.dll
 *.s16
+!filters/LakeHP_OpenRooms.dll
