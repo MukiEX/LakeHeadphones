@@ -3,6 +3,7 @@
  * Based on the structure of TinyUSB's examples/device/uac2_speaker_fb (MIT).
  */
 #include "tusb.h"
+#include "usb_audio51_tusb_compat.h"
 #include "usb_audio51.h"
 #include <string.h>
 
@@ -148,7 +149,7 @@ uint8_t const *tud_descriptor_device_cb(void)
     TUD_AUDIO_DESC_TYPE_I_FORMAT(2, 16), \
     TUD_AUDIO_DESC_STD_AS_ISO_EP(EPNUM_AUDIO_OUT, \
         (uint8_t)(TUSB_XFER_ISOCHRONOUS | TUSB_ISO_EP_ATT_ASYNCHRONOUS | TUSB_ISO_EP_ATT_DATA), \
-        TUD_AUDIO_EP_SIZE(USB_AUDIO51_RATE, 2, _nch), 0x01), \
+        USB_AUDIO51_EP_SIZE(USB_AUDIO51_RATE, 2, _nch), 0x01), \
     TUD_AUDIO_DESC_CS_AS_ISO_EP(AUDIO_CS_AS_ISO_DATA_EP_ATT_NON_MAX_PACKETS_OK, AUDIO_CTRL_NONE, \
                                 AUDIO_CS_AS_ISO_DATA_EP_LOCK_DELAY_UNIT_MILLISEC, 0x0001), \
     TUD_AUDIO_DESC_STD_AS_ISO_FB_EP(EPNUM_AUDIO_FB | 0x80, 4, 0x01)
@@ -157,7 +158,7 @@ static uint8_t const cfg_audio_fn51[] = { AUDIO_FN(6, CH_CFG_51, TUD_AUDIO_DESC_
 static uint8_t const cfg_audio_fn71[] = { AUDIO_FN(8, CH_CFG_71, TUD_AUDIO_DESC_FEATURE_UNIT_EIGHT_CHANNEL) };
 TU_VERIFY_STATIC(sizeof(cfg_audio_fn51) == USB_AUDIO51_FN_LEN(6), "5.1 audio descriptor length mismatch");
 TU_VERIFY_STATIC(sizeof(cfg_audio_fn71) == USB_AUDIO51_FN_LEN(8), "7.1 audio descriptor length mismatch");
-TU_VERIFY_STATIC(TUD_AUDIO_EP_SIZE(USB_AUDIO51_RATE, 2, 8) <= CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX, "EP too small for 7.1");
+TU_VERIFY_STATIC(USB_AUDIO51_EP_SIZE(USB_AUDIO51_RATE, 2, 8) <= CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX, "EP too small for 7.1");
 
 uint16_t usb_audio51_fn_desc_len = USB_AUDIO51_FN_LEN(6);   /* read by TinyUSB's audio driver */
 void usb_audio51_set_channels(int nch)
@@ -747,7 +748,7 @@ static void uac1_set_alt(uint8_t rhport, uint8_t alt)
 #endif
         usbd_edpt_clear_stall(rhport, UAC1_EP_OUT);
         u1.w = u1.r = 0; u1.primed = false; u1.since_adj = 0;
-        u1.active = usbd_edpt_xfer(rhport, UAC1_EP_OUT, u1_buf, UAC1_EP_SIZE);
+        u1.active = USB_AUDIO51_EDPT_XFER(rhport, UAC1_EP_OUT, u1_buf, UAC1_EP_SIZE);
         s_streaming = u1.active; usb_audio51_on_stream(u1.active);
     }
 }
@@ -829,7 +830,7 @@ static bool uac1_xfer(uint8_t rhport, uint8_t ep, xfer_result_t result, uint32_t
             u1.w++;
         }
     }
-    if (u1.active) usbd_edpt_xfer(rhport, UAC1_EP_OUT, u1_buf, UAC1_EP_SIZE);
+    if (u1.active) USB_AUDIO51_EDPT_XFER(rhport, UAC1_EP_OUT, u1_buf, UAC1_EP_SIZE);
     return true;
 }
 

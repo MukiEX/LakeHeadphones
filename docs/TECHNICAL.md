@@ -22,6 +22,7 @@ This document describes the final configuration: a 5.1/7.1 USB headphone virtual
 16. [Verification status](#16-verification-status)
 17. [File map](#17-file-map)
 18. [Open room filters](#18-open-room-filters)
+19. [RP2350-USB-A build (USB audio output)](#19-rp2350-usb-a-build-usb-audio-output)
 
 ---
 
@@ -652,7 +653,9 @@ Tested on a Pico 2 W with Windows 11 and a 48 kHz SBC headset:
   - The angle mapping round-trips within 1°.
 - **USB descriptors:** decoded and checked for 5.1 and 7.1, with and without the network adapter. This covered interface numbering, channel masks and endpoint sizes.
 - **Settings page:** exercised in a headless browser against a mock API.
-- **Builds:** Pico release and debug builds compile and link (pico-sdk 2.3.1, clang).
+- **Builds:** Pico 2 W and RP2350-USB-A release and debug builds compile and link (pico-sdk 2.3.1, clang). The shared USB device code builds against both TinyUSB 0.18 (pico-sdk) and 0.21 (the USB-A build).
+- **PIO-USB isochronous encoder:** matches an NRZI + bit-stuffing reference for 2–404-byte packets (`test/pio_usb_encode_test`).
+- **Filter region tag:** `extract_filters.py` and the flasher page find the region address in both firmwares and produce byte-identical UF2s.
 
 ### Not yet tested on hardware
 
@@ -664,6 +667,7 @@ Tested on a Pico 2 W with Windows 11 and a 48 kHz SBC headset:
 - Switch 2 stereo mode.
 - The pairing changes.
 - The ESP32 and nRF5340 builds.
+- The RP2350-USB-A build (section 19): PIO-USB isochronous output, device compatibility, DSP timing at 240 MHz.
 
 ---
 
@@ -675,6 +679,7 @@ firmware/common/
   dh_pipeline.c/.h               rings, rate lock, rooms, presets, beeps, 5.1/7.1
   usb_audio51.c/.h               UAC2 5.1/7.1, UAC1 stereo, HID media keys, composite builder
   usb_audio51_tusb_config.h      TinyUSB settings shared by the builds
+  usb_audio51_tusb_compat.h      TinyUSB 0.18 / 0.20+ name differences
   lhp_filter_region.h            filter region parser + CRC
   resampler.c/.h                 48 → 44.1 kHz resampler
 firmware/pico2w/
@@ -684,13 +689,22 @@ firmware/pico2w/
   web/index.html                 settings page
   dbg_cdc.c/.h                   debug USB serial log
   btstack_config.h, tusb_config.h, CMakeLists.txt
+firmware/rp2350_usbhost/
+  main.c                         core 0: USB device, DSP, button, RGB LED, settings, web hooks
+  usbout.c/.h                    core 1: PIO-USB host, output format choice, FIFO feed
+  status_led.c/.h, ws2812.pio    WS2812 LED on PIO2
+  tusb_config.h, CMakeLists.txt  device on the native port, host on PIO-USB
+  patches/pico-pio-usb-iso.patch isochronous transfers for Pico-PIO-USB
+  lib/                           fetched by tools/vendor_usbhost_libs.py (not in the repo)
 firmware/esp32s3_usb_dsp/        ESP32-S3 USB + DSP → I2S
 firmware/esp32_a2dp_tx/          ESP32 I2S → A2DP
 firmware/nrf5340_le_audio/       nrf_audio overlay + README
 tools/                           extract_filters.py, make_flasher.py, flasher_template.html,
-                                 lhp_wav.c, vendor_tinyusb_s3.py, make_open_filters.py
+                                 lhp_wav.c, vendor_tinyusb_s3.py, vendor_usbhost_libs.py,
+                                 make_open_filters.py
 filters/                         LakeHP_OpenRooms.dll (open rooms, CC BY-SA 3.0) + README
-test/                            pipeline, stall, lowlat, resampler, surround, surround71; host_run
+test/                            pipeline, stall, lowlat, resampler, surround, surround71,
+                                 pio_usb_encode; host_run
 docs/                            TECHNICAL.md, DECOMPILATION.md, wiring.html, wiring SVGs
 ```
 
@@ -764,3 +778,87 @@ Only measurements of the original's output were used; none of its data is used.
 ### Licence
 
 The filters are derived from the SONICOM data and distributed under CC BY-SA 3.0 with attribution (Imperial College London). The generator script is under the project's licence. Details: [filters/README.md](../filters/README.md).
+
+---
+
+## 19. RP2350-USB-A build (USB audio output)
+
+The same sound card and engine, with the output going to a USB audio device instead of Bluetooth: a USB DAC dongle or the USB dongle of a 2.4 GHz wireless headset.
+
+### Hardware
+
+Waveshare RP2350-USB-A: RP2350A, 2 MB flash, a native USB-C port and a USB-A port wired to GP12 (D+) / GP13 (D−), and a WS2812 LED on GP16.
+
+| Port | Role | Driver |
+|---|---|---|
+| USB-C | device: the 5.1/7.1 or stereo sound card, settings adapter, debug serial | TinyUSB device on the RP2350 USB controller (root port 0) |
+| USB-A | host: the output device | TinyUSB host + Pico-PIO-USB (root port 1), PIO0 (TX) and PIO1 (RX) |
+
+### Cores and clock
+
+- **System clock** 240 MHz at 1.20 V. PIO-USB needs a multiple of 12 MHz.
+- **Core 0:** TinyUSB device from the 250 µs timer interrupt and the shared USB interrupt (as on the Pico 2 W). The main loop runs the DSP, button, LED, settings page and debug log.
+- **Core 1:** the PIO-USB host only. It sends SOF every millisecond and one isochronous packet per frame, from its own timer interrupt, and runs `tuh_task()` plus the output feed in its loop. Nothing else runs there.
+- Flash writes (settings save) and BOOTSEL reads park core 1 through `flash_safe_execute` / multicore lockout. A save is an audible gap of ~50 ms; a BOOTSEL read (every 50 ms) holds core 1 for about 10 µs.
+
+### Isochronous transfers in Pico-PIO-USB
+
+Upstream Pico-PIO-USB does control, bulk and interrupt transfers only. `patches/pico-pio-usb-iso.patch` adds isochronous:
+
+- Isochronous endpoints are scheduled like interrupt endpoints, every 2^(bInterval−1) frames.
+- **OUT:** token, then DATA0 with the payload. No handshake, no retry. Packets up to 400 bytes. The NRZI/bit-stuffed encoding is prepared before the frame in one of two static slots (956 bytes each; the worst case, 404 bytes of 0xFF, encodes to 944).
+- **IN:** token, receive, CRC check, no ACK. A missed packet completes with length 0.
+- Slots are freed when the endpoint or device closes. With both slots in use, an endpoint falls back to 64-byte packets.
+
+### Output device setup (`usbout.c`)
+
+TinyUSB 0.21's audio host class (UAC1 and UAC2, feedback endpoints, a playback FIFO that sends silence when it runs dry) does the class work. On mount, 100 ms later:
+
+1. **Choose a playback configuration.** Score: 48 kHz (1000) over 44.1 kHz (500); stereo (100) over multichannel (60) over mono (30); then S16 > S24_3LE > S24 > S32 > S8. Configurations whose packet would exceed 400 bytes are skipped. Other rates are not used.
+2. **Configure,** unmute, and set the master volume to 0 dB (clamped to the device's range). The PC's volume is applied in the pipeline before this.
+3. **Read** VID/PID and the product string for the settings page, then start the stream.
+
+The feed keeps about 3 ms of audio in TinyUSB's playback FIFO (2048 bytes), in chunks of up to 64 frames:
+
+- Stereo int16 from the pipeline becomes the device's format. Extra channels are silent; mono gets (L+R)/2.
+- **44.1 kHz devices:** the pipeline's 48 kHz output goes through the resampler (48 → 44.1 kHz). The device still sets the pace, because frames are pulled on demand.
+- **Rate lock:** asynchronous devices pace the FIFO through their feedback endpoint; adaptive and synchronous ones follow the host's SOF. Either way, the pipeline is drained at the device's rate, and the USB input feedback locks the PC to it, exactly as the Bluetooth sink does on the Pico 2 W.
+- **No device or not streaming:** the pipeline is drained at 48 kHz, so the PC side keeps running.
+- **Failures:** a failed start or transfer retries after 500 ms. Unplugging resets everything. A long press or the settings page restarts the stream (stop, then set up again).
+
+### Buffers and latency
+
+With no Bluetooth retries to absorb, the buffers are much smaller than on the Pico 2 W:
+
+| Setting | Pico 2 W | RP2350-USB-A |
+|---|---|---|
+| `DHP_TARGET_FILL` (rooms) | default | 1792 frames |
+| `DHP_TARGET_FILL_LL` / `DHP_LL_CHUNK` | default | 160 / 64 frames |
+| `USB_AUDIO51_FIFO_PACKETS` | 12 | 6 |
+
+A buffer simulation with DSP block times of 11–18 ms gave no underruns from 1536 to 2304 frames; 1792 was chosen. Device-side latency is about 45–49 ms with the rooms and about 6 ms in low-latency stereo, plus the output device's own delay.
+
+### Flash layout (2 MB)
+
+| Address | Contents |
+|---|---|
+| 0x10000000 | firmware (about 200 KB) |
+| 0x10100000 | room filter region, up to 448 KB |
+| end − 32 KB | settings sector (the same v3 layout as the Pico 2 W) |
+
+Each firmware carries a tag (`"LHP-FREGION"`, then the region address and maximum size; see `lhp_filter_region.h`). `extract_filters.py --uf2` and the flasher page read it, so one tool serves both boards. Untagged (older) firmware gets 0x10300000, and `--addr` overrides it.
+
+### Settings page
+
+The page is the Pico 2 W's. When the state carries an `out` object, the Headset tab becomes **Output**: the state, device name and VID:PID, format, resampling and FIFO dips, plus a **Restart output** button (`{"action":"restart"}`). The Load card shows the DSP on core 0.
+
+### TinyUSB version
+
+The USB-A build needs TinyUSB 0.21 (the first releases with the audio host class), at a pinned commit fetched by `tools/vendor_usbhost_libs.py`. pico-sdk 2.3 ships 0.18. `usb_audio51_tusb_compat.h` maps the shared device code onto 0.20+ names: `AUDIO20_*`, `TUD_AUDIO20_*`, a local `audio_control_request_t`, and the `is_isr` argument of `usbd_edpt_xfer()`. The Pico 2 W build is unchanged.
+
+### Not yet done
+
+- Microphone passthrough from headset dongles.
+- Forwarding the dongle's HID buttons as media keys.
+- High-speed-only devices (rare in DACs and dongles).
+

@@ -25,3 +25,6 @@ lhp_wav
 *.dll
 *.s16
 !filters/LakeHP_OpenRooms.dll
+firmware/rp2350_usbhost/lib/
+test/pio_usb_encode_test
+test/pio_usb_encode.c

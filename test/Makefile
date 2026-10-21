@@ -23,3 +23,13 @@ surround_test: surround_test.c ../firmware/common/dh_pipeline.c ../engine/lakehp
 
 surround71_test: surround71_test.c ../firmware/common/dh_pipeline.c ../engine/lakehp.c
 	$(CC) -O2 -Wall -I../engine -I../firmware/common -o $@ $^ -lm
+
+# Pico-PIO-USB's NRZI/bit-stuffing encoder with the isochronous patch (packets
+# up to 404 bytes). Needs: python3 tools/vendor_usbhost_libs.py
+PIOUSB = ../firmware/rp2350_usbhost/lib/Pico-PIO-USB/src
+pio_usb_encode_test: pio_usb_encode_test.c $(PIOUSB)/pio_usb.c
+	{ printf '#include <stdint.h>\n#define __no_inline_not_in_flash_func(f) f\nenum {\n'; \
+	  sed -n '/PIO_USB_TX_ENCODED_DATA_SE0 = 0/,/^};/p' $(PIOUSB)/pio_usb_ll.h; \
+	  sed -n '/^uint16_t __no_inline_not_in_flash_func(pio_usb_ll_encode_tx_data)(/,/^}/p' $(PIOUSB)/pio_usb.c; } > pio_usb_encode.c
+	$(CC) $(CFLAGS) -o $@ pio_usb_encode_test.c pio_usb_encode.c
+

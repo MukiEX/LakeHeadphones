@@ -8,6 +8,7 @@ PC / console ──USB 5.1/7.1 (UAC2, 48 kHz)──▶ [ DSP: virtual rooms ] �
 
 * `engine/` is the decompiled engine as plain C99 (`lakehp.c/.h`). It matches the original `DolbyHph.dll` to ±1 LSB (about 102 dB SNR). See [docs/DECOMPILATION.md](docs/DECOMPILATION.md).
 * `firmware/pico2w/` is the **single-board** build for the **Raspberry Pi Pico 2 W** (RP2350 + CYW43439, which has Classic Bluetooth).
+* `firmware/rp2350_usbhost/` is the **USB output** build for the **Waveshare RP2350-USB-A**: the sound card on its USB-C port, and the rendered stereo goes out of its USB-A port to a **USB DAC dongle** or a **2.4 GHz wireless headset's USB dongle**. No Bluetooth, so much lower latency.
 * `firmware/esp32s3_usb_dsp/` + `firmware/esp32_a2dp_tx/` is the **two-board** build: an ESP32-S3 handles USB and DSP and sends I2S to a classic ESP32 that does the Bluetooth.
 * `firmware/esp32s3_usb_dsp/` + `firmware/nrf5340_le_audio/` is the **LE Audio** build: the same S3 feeds an nRF5340 DK running Nordic's `nrf_audio` unicast client (LC3), for LE Audio headsets such as the Sony XM5/XM6.
 
@@ -17,13 +18,13 @@ The full technical breakdown (engine, placement, 7.1, USB, Bluetooth, settings p
 
 > **Why not an ESP32-S3 alone?** The S3 has only Bluetooth LE, and ordinary headsets need Bluetooth Classic (A2DP). Only the original ESP32 has Classic, and it has no USB device port. The nRF52840 is BLE-only too. The Pico 2 W is the one cheap board with both native USB and Classic BT.
 
-## Quick start: Pico 2 W without compiling
+## Quick start without compiling
 
-Open **`lakehp_flasher.html`** in any desktop browser, drop in your copy of the DLL, and click **Build**. The page pulls the three 48 kHz room filters out of the DLL, adds them to the prebuilt firmware it carries, and saves `lakehp_pico2w_ready.uf2`. Hold BOOTSEL, plug in the Pico 2 W, and drag that file onto the RP2350 drive. It all runs locally: nothing is uploaded. The page also carries this source tree as a download.
+Open **`lakehp_flasher.html`** in any desktop browser, drop in your copy of the DLL, and click **Build**. The page pulls the three 48 kHz room filters out of the DLL, adds them to the prebuilt firmware it carries (Pico 2 W or RP2350-USB-A), and saves a ready UF2. Hold BOOTSEL, plug in the board, and drag that file onto the RP2350 drive. It all runs locally: nothing is uploaded. The page also carries this source tree as a download.
 
-The filters go into their own flash area (0x10300000), separate from the firmware, so later firmware-only UF2s keep them. Without filters the firmware still runs, as plain low-latency stereo, and the LED blinks 8 times.
+The filters go into their own flash area (0x10300000 on the Pico 2 W, 0x10100000 on the RP2350-USB-A; each firmware carries its address and the tools read it), separate from the firmware, so later firmware-only UF2s keep them. Without filters the firmware still runs, as plain low-latency stereo, and the LED blinks 8 times.
 
-To regenerate the page after changing the firmware: `python3 tools/make_flasher.py --normal <uf2> --debug <debug uf2> --src <zip>`. Both UF2s must be built without `lakehp_filters.h`.
+To regenerate the page after changing the firmware: `python3 tools/make_flasher.py --normal <uf2> --debug <debug uf2> [--usba-normal <uf2> --usba-debug <uf2>] --src <zip>`. The UF2s must be built without `lakehp_filters.h`.
 
 ## Open room filters (no original DLL needed)
 
@@ -60,6 +61,30 @@ How it runs (tested on hardware with Windows 11 and an A2DP headset):
 - **Core 1:** the virtualizer DSP (~13.7 ms per 21 ms block in 5.1, about 64% of the core; roughly 25% more in 7.1 with the rear pair moved) and BTstack + CYW43.
 - `usb_audio51.c` includes a fix for TinyUSB 0.18 on RP2: the stream's endpoints are disarmed when the host closes it. Without that, Windows' open/close/reopen at the start of playback panicked the USB driver and froze the device.
 - RAM: about 465 KB static (7.1-capable), leaving ~30 KB heap (~20 KB in the debug build).
+
+## 1b. Waveshare RP2350-USB-A (USB DAC / 2.4 GHz headset dongle)
+
+```
+PC / console ──USB-C: 5.1/7.1 sound card──▶ [ RP2350: virtual rooms ] ──USB-A: USB audio──▶ DAC or headset dongle
+```
+
+The USB-A port is a USB host made from PIO state machines ([Pico-PIO-USB](https://github.com/sekigon-gonnoc/Pico-PIO-USB)), driving any **USB Audio Class 1 or 2 playback device at full speed**: phone-style USB-C DACs (through a C-to-A adapter) and the USB dongles of wireless gaming headsets. LakeHP picks 48 kHz stereo 16-bit when offered, then 24/32-bit or multichannel (it fills the first two channels), and 44.1 kHz through its resampler as a last resort. It unmutes the device and sets its volume to 0 dB; the PC's volume control works as usual.
+
+```sh
+python3 tools/vendor_usbhost_libs.py       # once: pinned TinyUSB (audio host class) + Pico-PIO-USB with isochronous support
+export PICO_SDK_PATH=/path/to/pico-sdk      # 2.3.x with lib/lwip
+cmake -S firmware/rp2350_usbhost -B build-usbhost [-DLHP_DEBUG_CDC=1]
+cmake --build build-usbhost -j
+python3 tools/extract_filters.py <DLL> --uf2 build-usbhost/lakehp_usbhost.uf2   # adds the rooms at 0x10100000
+```
+
+Or use the flasher page and pick **RP2350-USB-A**. Flash it through the **USB-C** port (hold BOOT while plugging in).
+
+- **Controls** are the Pico 2 W's (BOOT button), except **hold 2 s**, which restarts the output stream.
+- **LED** (RGB): green = playing, yellow = starting, red blip each second = nothing plugged in, magenta = the device has no playback format LakeHP can use, fast red = retrying.
+- **Settings page:** same page; its *Output* tab shows the device, its format, and a restart button.
+- **Latency:** about 50 ms with the rooms (the 1024-sample convolution blocks; no Bluetooth buffering on top) and about 6 ms in low-latency stereo, plus whatever the DAC or headset adds.
+- **Limits:** full-speed devices only (every USB DAC and dongle is full speed; a hub in between works). One output device at a time. The dongle's microphone and buttons are not passed through yet.
 
 ## 2. ESP32-S3 + ESP32 (two boards)
 
@@ -186,21 +211,23 @@ cc -O2 -o resampler_test test/resampler_test.c firmware/common/resampler.c -lm &
 **Verified in this build:**
 - The engine is bit-accurate to the original DLL (run through an i386 PE loader) across rooms, rates and channel layouts.
 - The Pico 2 W firmware **compiles and links** against pico-sdk 2.3.1, TinyUSB, BTstack and the CYW43 driver (clang build).
+- The RP2350-USB-A firmware **compiles and links** (pico-sdk 2.3.1, TinyUSB 0.21 at the pinned commit, patched Pico-PIO-USB). Its isochronous packet encoder passes a host test for 2–404-byte packets, and the flasher page and `extract_filters.py` produce identical UF2s for it.
 - Both ESP-IDF projects pass a full compiler front-end check against the ESP-IDF v5.5.5 and TinyUSB headers.
 - The USB descriptors were decoded and checked.
 - Host simulations passed: pipeline rate locking, 40 ms Bluetooth stalls, low-latency mode switching (the LL output is an exact downmix and no USB data is lost), and resampler quality (71–75 dB SNR).
 - The nRF5340 overlay uses only Kconfig symbols that exist in NCS v3.4.1, and the S3's `sdkconfig.defaults.nrf5340` variant passes the same front-end check. The nRF build itself was not compiled here.
 
-**Hardware status:** the Pico 2 W build plays clean audio on real hardware (Windows 11, SBC 48 kHz headset). The ESP32 and nRF5340 builds have not been run on hardware yet. Expect some first-flash tuning: headset quirks, USB enumeration on your OS, buffer sizes. macOS needs `-DUSB_AUDIO51_MACOS=1` for its full-speed feedback format.
+**Hardware status:** the Pico 2 W build plays clean audio on real hardware (Windows 11, SBC 48 kHz headset). The RP2350-USB-A, ESP32 and nRF5340 builds have not been run on hardware yet. Expect some first-flash tuning: headset quirks, USB enumeration on your OS, buffer sizes. macOS needs `-DUSB_AUDIO51_MACOS=1` for its full-speed feedback format.
 
 ## Layout
 
 ```
 engine/            lakehp.c/.h        portable headphone engine (no filter data)
-tools/             extract_filters.py make_open_filters.py vendor_tinyusb_s3.py lhp_wav.c
+tools/             extract_filters.py make_open_filters.py vendor_tinyusb_s3.py vendor_usbhost_libs.py lhp_wav.c
                    flasher_template.html + make_flasher.py -> lakehp_flasher.html
 firmware/common/   dh_pipeline (rings, rate lock, rooms, beeps), usb_audio51 (UAC2 5.1), resampler
 firmware/pico2w/   single-board build (TinyUSB + BTstack A2DP source)
+firmware/rp2350_usbhost/   Waveshare RP2350-USB-A: USB sound card -> USB DAC / headset dongle (PIO-USB host)
 firmware/esp32s3_usb_dsp/  ESP32-S3: USB + DSP -> I2S
 firmware/esp32_a2dp_tx/    ESP32:  I2S -> A2DP (Bluedroid)
 firmware/nrf5340_le_audio/ nRF5340 DK: overlay for Nordic nrf_audio (I2S -> LE Audio unicast)

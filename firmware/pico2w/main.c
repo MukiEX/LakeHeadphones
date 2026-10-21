@@ -60,6 +60,7 @@
  * by tools/lakehp_flasher.html (or extract_filters.py --region). */
 #define FILTER_REGION_OFFSET 0x300000u
 #define FILTER_REGION_MAX    (512u * 1024u)
+LHP_REGION_TAG(XIP_BASE + FILTER_REGION_OFFSET, FILTER_REGION_MAX);
 #if LHP_DEBUG_CDC
 #include "dbg_cdc.h"
 #endif
@@ -568,6 +569,7 @@ int main(void)
     gpio_init(LHP_BUTTON_GPIO);
     gpio_pull_up(LHP_BUTTON_GPIO);
 #endif
+    LHP_REGION_TAG_KEEP();
     settings_load();
     int nfilt;
 #if LHP_FILTERS_EMBEDDED

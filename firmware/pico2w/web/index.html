@@ -66,7 +66,7 @@ svg text{fill:var(--dim);font:11px system-ui,sans-serif}
 <nav id="tabs">
   <button data-t="sound" class="on">Sound</button>
   <button data-t="surround">Surround lab</button>
-  <button data-t="headset">Headset</button>
+  <button data-t="headset" id="tabHs">Headset</button>
   <button data-t="system">System</button>
 </nav>
 <main>
@@ -145,10 +145,10 @@ svg text{fill:var(--dim);font:11px system-ui,sans-serif}
 
 <section id="headset">
   <div class="grid">
-    <div class="card"><h3><span class="dot" id="btDot"></span>Bluetooth</h3><div class="kv mono" id="btKv"></div></div>
+    <div class="card"><h3><span class="dot" id="btDot"></span><span id="btTitle">Bluetooth</span></h3><div class="kv mono" id="btKv"></div></div>
   </div>
-  <h2>Pair a different headset</h2>
-  <p class="note">Forgets the remembered headset and starts pairing. Put the new one in pairing mode close to the Pico; it picks the nearest headphones within a few seconds and you hear two rising tones.</p>
+  <h2 id="hsH">Pair a different headset</h2>
+  <p class="note" id="hsNote">Forgets the remembered headset and starts pairing. Put the new one in pairing mode close to the Pico; it picks the nearest headphones within a few seconds and you hear two rising tones.</p>
   <div class="row"><button class="b danger" id="forget">Forget headset and pair</button></div>
 </section>
 
@@ -171,6 +171,12 @@ const toast=t=>{const e=$('toast');e.textContent=t;e.classList.add('on');clearTi
 async function post(o){const r=await fetch('/api/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)});return r.json()}
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===b.dataset.t))});
 const BT=['off','pairing','reconnecting','connected','streaming'];
+const OUT=['nothing plugged in','starting','playing','no usable playback format','failed, retrying'];
+let outUi=0;
+function setupOut(){if(outUi||!S||!S.out)return;outUi=1;
+  $('tabHs').textContent='Output';$('btTitle').textContent='USB output';$('hsH').textContent='Restart the output';
+  $('hsNote').textContent='Stops the stream to the DAC or headset dongle and sets it up again (same as holding BOOTSEL for 2 s). Unplugging and replugging it works too.';
+  $('forget').textContent='Restart output';$('forget').className='b';}
 function kv(el,o){el.innerHTML=Object.entries(o).map(([k,v])=>`<span>${k}</span><span>${v}</span>`).join('')}
 function same(a,b){return Math.abs(a.delay-b.delay)<.01&&Math.abs(a.hf-b.hf)<.01&&Math.abs(a.eq-b.eq)<.01}
 /* same mapping as lhp_surround_for_azimuth() / lhp_surround_azimuth() in the engine */
@@ -211,15 +217,20 @@ function render(){
   const d1=S.room!==S.saved.room||S.lowlat!==S.saved.lowlat;
   $('dirty1').textContent=d1?'Not saved: power-up uses the saved settings.':'';
   $('dirty2').textContent=S.preset!==S.saved.preset?'Not saved.':(S.preset==='custom'?'Custom placement (Save keeps it).':'');
+  if(S.out){const o=S.out;
+    $('btDot').className='dot'+(o.state===2?' on':o.state===1?' mid':'');
+    kv($('btKv'),{state:OUT[o.state]||o.state,device:o.state?(o.name||'USB audio')+` (${o.vid}:${o.pid})`:'—',
+      format:o.rate?`${o.rate/1000} kHz, ${o.ch} ch, ${o.bits}-bit`+(o.rs?' (resampled)':''):'—','buffer dips':o.dry});
+  }else{
   $('btDot').className='dot'+(S.bt.state===4?' on':S.bt.state===3?' mid':'');
-  kv($('btKv'),{state:BT[S.bt.state]||S.bt.state,headset:S.bt.addr||'—',codec:S.bt.rate?`SBC ${S.bt.rate/1000} kHz, bitpool ${S.bt.bitpool}`:'—'});
+  kv($('btKv'),{state:BT[S.bt.state]||S.bt.state,headset:S.bt.addr||'—',codec:S.bt.rate?`SBC ${S.bt.rate/1000} kHz, bitpool ${S.bt.bitpool}`:'—'});}
   $('usbDot').className='dot'+(S.usb.stream?' on':'');
   kv($('usbKv'),{stream:S.usb.stream?'playing':'idle','packets/s':S.usb.rx,mode:S.stereo?'stereo (UAC1)':is71?'7.1 (UAC2)':'5.1 (UAC2)'});
-  kv($('loadKv'),{'Virtualizer DSP (core 1)':S.load.dsp+'%','BT encoder (core 0)':S.load.enc+'%'});
+  kv($('loadKv'),S.out?{'Virtualizer DSP (core 0)':S.load.dsp+'%'}:{'Virtualizer DSP (core 1)':S.load.dsp+'%','BT encoder (core 0)':S.load.enc+'%'});
   kv($('fwKv'),{version:S.fw,filters:S.filters?'3 rooms':'missing',settings:'192.168.20.1'});
 }
 async function poll(){
-  try{S=await (await fetch('/api/state')).json();$('link').textContent='connected';render()}
+  try{S=await (await fetch('/api/state')).json();setupOut();$('link').textContent='connected';render()}
   catch(e){$('link').textContent='not connected'}
   setTimeout(poll,1000);
 }
@@ -242,7 +253,7 @@ function send(o){editing=1;clearTimeout(tm);tm=setTimeout(async()=>{await post(o
 document.querySelectorAll('#presets .card.pick').forEach(c=>c.onclick=async()=>{await post({preset:c.dataset.preset});toast(c.querySelector('h3').textContent)});
 $('saveSound').onclick=$('saveSur').onclick=async()=>{const r=await post({action:'save'});toast(r.msg||'Saved')};
 $('revert').onclick=async()=>{await post({action:'revert'});toast('Back to saved')};
-$('forget').onclick=async()=>{if(confirm('Forget the current headset?')){await post({action:'forget'});toast('Pairing…')}};
+$('forget').onclick=async()=>{if(S&&S.out){await post({action:'restart'});toast('Restarting output…');return}if(confirm('Forget the current headset?')){await post({action:'forget'});toast('Pairing…')}};
 $('webOff').onclick=async()=>{if(confirm('Remove the settings adapter? Press BOOTSEL 5 times to bring it back.')){await post({action:'weboff'});toast('Restarting…')}};
 $('reboot').onclick=async()=>{await post({action:'reboot'});toast('Restarting…')};
 poll();

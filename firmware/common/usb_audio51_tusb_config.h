@@ -57,11 +57,16 @@ extern uint16_t usb_audio51_fn_desc_len;
 #define CFG_TUD_AUDIO_FUNC_1_RESOLUTION_RX              16
 
 #define CFG_TUD_AUDIO_ENABLE_EP_OUT                     1
+/* full-speed isochronous packet size (TinyUSB's TUD_AUDIO_EP_SIZE changed arity in 0.20) */
+#define USB_AUDIO51_EP_SIZE(_rate, _bytes, _ch) ((((_rate) + 999) / 1000 + 1) * (_bytes) * (_ch))
 #define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX \
-    TUD_AUDIO_EP_SIZE(CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE, CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX)
+    USB_AUDIO51_EP_SIZE(CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE, CFG_TUD_AUDIO_FUNC_1_N_BYTES_PER_SAMPLE_RX, CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX)
 /* ~16 ms (5.1) / ~12 ms (7.1) of software FIFO; feedback keeps it half full. Bigger stalls on the
  * sink side spill into the pipeline (dhp_usb_frames_wanted_guarded). */
-#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ           (12 * CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX)  /* = 16 x 5.1 packets, 12 x 7.1 */
+#ifndef USB_AUDIO51_FIFO_PACKETS
+#define USB_AUDIO51_FIFO_PACKETS 12   /* 7.1-size packets: = 16 x 5.1 packets, 12 x 7.1 */
+#endif
+#define CFG_TUD_AUDIO_FUNC_1_EP_OUT_SW_BUF_SZ           (USB_AUDIO51_FIFO_PACKETS * CFG_TUD_AUDIO_FUNC_1_EP_OUT_SZ_MAX)
 
 #define CFG_TUD_AUDIO_ENABLE_FEEDBACK_EP                1
 /* Feedback format is picked per host automatically (see usb_audio51.c).

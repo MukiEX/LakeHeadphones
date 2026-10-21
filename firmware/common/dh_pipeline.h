@@ -41,7 +41,9 @@ extern "C" {
 #ifndef DHP_TARGET_FILL_LL
 #define DHP_TARGET_FILL_LL 512                   /* frames buffered in low-latency stereo mode */
 #endif
+#ifndef DHP_LL_CHUNK
 #define DHP_LL_CHUNK       256                   /* low-latency mode works in small chunks */
+#endif
 
 /* USB/WAVE 5.1 order (FL FR FC LFE BL BR) -> engine positions L,C,R,Ls,Rs,LFE */
 #define DHP_MAP_USB51      { 0, 2, 1, 4, 5, 3 }

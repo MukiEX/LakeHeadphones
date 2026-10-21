@@ -21,6 +21,16 @@
 #define LHP_REGION_MAGIC   0x4650484Cu      /* "LHPF" */
 #define LHP_REGION_VERSION 1u
 
+/* Each firmware says where it reads the region from, so the tools can find
+ * it in any build's UF2: the tag string, then u32 address and u32 max size.
+ * Firmwares without a tag (older Pico 2 W builds) use 0x10300000. */
+#define LHP_REGION_TAG_STR "LHP-FREGION"
+typedef struct { char tag[12]; uint32_t addr, max; } lhp_region_tag_t;
+#define LHP_REGION_TAG(_addr, _max) \
+    __attribute__((used)) const lhp_region_tag_t lhp_region_tag = { LHP_REGION_TAG_STR, (_addr), (_max) }
+/* call once from main(): keeps the tag through --gc-sections */
+#define LHP_REGION_TAG_KEEP() __asm volatile("" :: "r"(&lhp_region_tag))
+
 static inline uint32_t lhp_region_rd32(const uint8_t *p)
 {
     return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
