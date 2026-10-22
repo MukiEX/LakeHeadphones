@@ -142,7 +142,7 @@ extern const char lhp_web_ui[];
 extern const unsigned lhp_web_ui_len;
 
 #define REQ_MAX  1536
-#define RESP_MAX 1536
+#define RESP_MAX 2048          /* the state JSON is ~1.1-1.5 KB */
 typedef struct {
     struct tcp_pcb *pcb;
     char  req[REQ_MAX];

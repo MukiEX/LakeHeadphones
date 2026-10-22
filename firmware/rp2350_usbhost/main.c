@@ -131,12 +131,31 @@ static void read_placement(const volatile uint32_t *p, lhp_surround_t *s)
     if (!placement_ok(s)) *s = LHP_SURROUND_FACTORY;
 }
 static settings_t g_set;
+/* The settings sector holds 16 page-sized slots, written in turn; the last
+ * valid one wins. Programming one page freezes core 1 (the USB output) for
+ * under a millisecond. Erasing the sector takes ~50 ms - long enough for
+ * the output device to see the bus as suspended - so it happens only when
+ * all slots are used (every 16th save), and the output is restarted after. */
+#define SET_SLOTS (FLASH_SECTOR_SIZE / FLASH_PAGE_SIZE)
+static const volatile uint32_t *slot_ptr(int i)
+{
+    return (const volatile uint32_t *)(XIP_BASE + MODE_FLASH_OFFSET + (uint32_t)i * FLASH_PAGE_SIZE);
+}
+static bool slot_valid(int i) { const volatile uint32_t *p = slot_ptr(i); return p[0] == MODE_MAGIC && p[3] == 3; }
+static bool slot_erased(int i)
+{
+    const volatile uint32_t *p = slot_ptr(i);
+    for (unsigned k = 0; k < FLASH_PAGE_SIZE / 4; k++) if (p[k] != 0xFFFFFFFFu) return false;
+    return true;
+}
 static void settings_load(void)
 {
-    const volatile uint32_t *p = (const volatile uint32_t *)(XIP_BASE + MODE_FLASH_OFFSET);
     memset(&g_set, 0, sizeof g_set);
     g_set.room = LHP_DEFAULT_ROOM;
-    if (p[0] != MODE_MAGIC || p[3] != 3) return;
+    int last = -1;
+    for (int i = 0; i < SET_SLOTS; i++) if (slot_valid(i)) last = i;
+    if (last < 0) return;
+    const volatile uint32_t *p = slot_ptr(last);
     g_set.stereo = p[1] == 1;
     read_placement(&p[4], &g_set.sur);
     g_set.web_off = p[7] == 1;
@@ -145,10 +164,12 @@ static void settings_load(void)
     g_set.ch8 = p[10] == 1;
     read_placement(&p[11], &g_set.back);
 }
+typedef struct { const settings_t *v; int slot; bool erase; } settings_write_t;
 static void settings_write_cb(void *param)
 {
     static uint32_t page[FLASH_PAGE_SIZE / 4];
-    const settings_t *v = param;
+    const settings_write_t *w = param;
+    const settings_t *v = w->v;
     memset(page, 0xFF, sizeof page);
     page[0] = MODE_MAGIC;
     page[1] = v->stereo;
@@ -164,20 +185,25 @@ static void settings_write_cb(void *param)
     memcpy(&page[11], &v->back.near_delay, 4);
     memcpy(&page[12], &v->back.far_hf_db, 4);
     memcpy(&page[13], &v->back.back_eq, 4);
-    flash_range_erase(MODE_FLASH_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(MODE_FLASH_OFFSET, (const uint8_t *)page, FLASH_PAGE_SIZE);
+    if (w->erase) flash_range_erase(MODE_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(MODE_FLASH_OFFSET + (uint32_t)w->slot * FLASH_PAGE_SIZE, (const uint8_t *)page, FLASH_PAGE_SIZE);
 }
-/* Pauses core 1 (the USB output) for ~50 ms: an audible gap, and the output
- * device may need its stream restarted. Only on an explicit save. */
 static void settings_save(void)
 {
+    settings_write_t w = { &g_set, -1, false };
+    for (int i = 0; i < SET_SLOTS; i++) if (slot_erased(i)) { w.slot = i; break; }
+    /* a slot is only usable if every later one is erased too (keeps "last valid wins") */
+    if (w.slot >= 0) for (int i = w.slot + 1; i < SET_SLOTS; i++) if (!slot_erased(i)) { w.slot = -1; break; }
+    if (w.slot < 0) { w.slot = 0; w.erase = true; }
     const uint32_t prev = watchdog_hw->scratch[1];
     watchdog_hw->scratch[1] = 60;
     usbout_core0_flash_busy = true;     /* core 1 skips its BOOTSEL reads meanwhile */
     busy_wait_us_32(500);               /* let a read in progress finish */
-    flash_safe_execute(settings_write_cb, &g_set, 1000);
+    const int rc = flash_safe_execute(settings_write_cb, &w, 1000);
     usbout_core0_flash_busy = false;
     watchdog_hw->scratch[1] = prev;
+    LOG0("Settings saved to slot %d%s (rc %d)\n", w.slot, w.erase ? " after erasing the sector" : "", rc);
+    if (w.erase) usbout_restart();      /* the device may have suspended during the erase */
 }
 static uint32_t g_reboot_at;
 
@@ -412,7 +438,8 @@ static void web_state(char *b, int max)
         "\"preset\":\"%s\","
         "\"sur\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
         "\"back\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
-        "\"saved\":{\"arr\":\"%s\",\"preset\":\"%s\",\"room\":%u,\"lowlat\":%s},"
+        "\"saved\":{\"arr\":\"%s\",\"preset\":\"%s\",\"room\":%u,\"lowlat\":%s,"
+        "\"sur\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f},\"back\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f}},"
         "\"usb\":{\"stream\":%s,\"rx\":%lu,\"in_ovr\":%lu,\"out_under\":%lu,\"blocks\":%lu},"
         "\"out\":{\"state\":%d,\"name\":\"%s\",\"vid\":\"%04x\",\"pid\":\"%04x\",\"rate\":%lu,\"ch\":%u,\"bits\":%u,"
         "\"rs\":%s,\"dry\":%lu,\"tone\":%s,\"pkts\":%lu,\"skip\":%lu,\"pmin\":%u,\"pmax\":%u,\"vol\":%s,\"sofp\":%s,\"sofmax\":%lu,\"sofover\":%lu},"
@@ -425,6 +452,8 @@ static void web_state(char *b, int max)
         (double)k.near_delay, (double)k.far_hf_db, (double)k.back_eq, (double)lhp_surround_azimuth(&k),
         saved_arr, dhp_preset_name(dhp_preset_of(&g_set.sur, &g_set.back)),
         (unsigned)g_set.room, g_set.lowlat ? "true" : "false",
+        (double)g_set.sur.near_delay, (double)g_set.sur.far_hf_db, (double)g_set.sur.back_eq,
+        (double)g_set.back.near_delay, (double)g_set.back.far_hf_db, (double)g_set.back.back_eq,
         usb_audio51_streaming() ? "true" : "false", (unsigned long)rx_rate,
         (unsigned long)g_pipe.in_overruns, (unsigned long)g_pipe.out_underruns, (unsigned long)g_pipe.blocks,
         (int)o.state, o.name, o.vid, o.pid, (unsigned long)o.rate, o.channels, o.bits,

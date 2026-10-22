@@ -218,7 +218,9 @@ function render(){
   drawHead(azOf(cur['']),azOf(cur.b),is71);
   const d1=S.room!==S.saved.room||S.lowlat!==S.saved.lowlat;
   $('dirty1').textContent=d1?'Not saved: power-up uses the saved settings.':'';
-  $('dirty2').textContent=S.preset!==S.saved.preset?'Not saved.':(S.preset==='custom'?'Custom placement (Save keeps it).':'');
+  {const same=(a,b)=>!!a&&!!b&&Math.abs(a.delay-b.delay)<0.02&&Math.abs(a.hf-b.hf)<0.02&&Math.abs(a.eq-b.eq)<0.02;
+   const unsaved=S.saved.sur?!(same(S.sur,S.saved.sur)&&same(S.back,S.saved.back)):S.preset!==S.saved.preset;
+   $('dirty2').textContent=unsaved?'Not saved: power-up uses the saved placement.':'';}
   if(S.out){const o=S.out;
     $('btDot').className='dot'+(o.state===2?' on':o.state===1?' mid':'');
     kv($('btKv'),{state:OUT[o.state]||o.state,device:o.state?(o.name||'USB audio')+` (${o.vid}:${o.pid})`:'—',

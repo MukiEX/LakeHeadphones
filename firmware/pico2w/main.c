@@ -474,7 +474,8 @@ static void web_state(char *b, int max)
         "\"preset\":\"%s\","
         "\"sur\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
         "\"back\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
-        "\"saved\":{\"arr\":\"%s\",\"preset\":\"%s\",\"room\":%u,\"lowlat\":%s},"
+        "\"saved\":{\"arr\":\"%s\",\"preset\":\"%s\",\"room\":%u,\"lowlat\":%s,"
+        "\"sur\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f},\"back\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f}},"
         "\"usb\":{\"stream\":%s,\"rx\":%lu},\"bt\":{\"state\":%d,\"addr\":\"%s\",\"rate\":%d,\"bitpool\":%d},"
         "\"load\":{\"dsp\":%d,\"enc\":%d}}",
         LHP_FW_VERSION, arr, usb_audio51_is_stereo() ? "true" : "false", g_have_filters ? "true" : "false",
@@ -484,6 +485,8 @@ static void web_state(char *b, int max)
         (double)k.near_delay, (double)k.far_hf_db, (double)k.back_eq, (double)lhp_surround_azimuth(&k),
         saved_arr, dhp_preset_name(dhp_preset_of(&g_set.sur, &g_set.back)),
         (unsigned)g_set.room, g_set.lowlat ? "true" : "false",
+        (double)g_set.sur.near_delay, (double)g_set.sur.far_hf_db, (double)g_set.sur.back_eq,
+        (double)g_set.back.near_delay, (double)g_set.back.far_hf_db, (double)g_set.back.back_eq,
         usb_audio51_streaming() ? "true" : "false", (unsigned long)rx_rate,
         (int)bt_a2dp_state(), addr, rate, bitpool, dsp_pct > 100 ? 100 : dsp_pct, enc_pct > 100 ? 100 : enc_pct);
 }
