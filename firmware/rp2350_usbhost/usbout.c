@@ -10,6 +10,7 @@
 #include "tusb.h"
 #include "pio_usb.h"
 #include "resampler.h"
+uint32_t pio_usb_host_get_frame_number(void);
 #if LHP_DEBUG_CDC
 #include "dbg_cdc.h"
 #define LOG1(...) dbg_logf(__VA_ARGS__)
@@ -171,6 +172,8 @@ static void setup_controls(uint8_t idx, uint8_t st)
         int32_t target = 0;
         if (target > range.max) target = range.max;
         if (target < range.min) target = range.min;
+        info_begin(); s_info.has_vol = true; s_info.vol = (int16_t)target;
+        s_info.vol_min = range.min; s_info.vol_max = range.max; info_end();
         if (tuh_audio_volume_set_sync(idx, st, TUH_AUDIO_CHANNEL_MASTER, (int16_t)target) != XFER_RESULT_SUCCESS)
             LOG1("usbout: volume set failed\n");
         else
@@ -258,7 +261,14 @@ void tuh_audio_umount_cb(uint8_t idx)
 
 void tuh_audio_playback_cb(uint8_t idx, uint8_t stream_idx, uint16_t xferred_bytes)
 {
-    (void)idx; (void)stream_idx; (void)xferred_bytes;
+    (void)idx; (void)stream_idx;
+    /* Frames that passed without a packet: a synchronous device plays a gap. */
+    static uint32_t last_frame;
+    const uint32_t fr = pio_usb_host_get_frame_number();
+    if (s_info.packets && fr - last_frame > 1 && fr - last_frame < 1000) s_info.skipped += fr - last_frame - 1;
+    last_frame = fr;
+    if (!s_info.pkt_min || xferred_bytes < s_info.pkt_min) s_info.pkt_min = xferred_bytes;
+    if (xferred_bytes > s_info.pkt_max) s_info.pkt_max = xferred_bytes;
     s_info.packets++;                 /* single writer (core 1); a torn read only miscounts */
 }
 

@@ -370,6 +370,9 @@ static void web_state(char *b, int max)
     usbout_info_t o;
     usbout_get_info(&o);
     json_safe(o.name);
+    char volstr[48] = "null";
+    if (o.has_vol) snprintf(volstr, sizeof volstr, "\"%.1f dB (range %.1f..%.1f)\"",
+                            o.vol / 256.0, o.vol_min / 256.0, o.vol_max / 256.0);
     const char *arr = usb_audio51_is_stereo() ? "stereo" : usb_audio51_channels() == 8 ? "71" : "51";
     const char *saved_arr = g_set.stereo ? "stereo" : g_set.ch8 ? "71" : "51";
     snprintf(b, max,
@@ -380,7 +383,7 @@ static void web_state(char *b, int max)
         "\"saved\":{\"arr\":\"%s\",\"preset\":\"%s\",\"room\":%u,\"lowlat\":%s},"
         "\"usb\":{\"stream\":%s,\"rx\":%lu,\"in_ovr\":%lu,\"out_under\":%lu,\"blocks\":%lu},"
         "\"out\":{\"state\":%d,\"name\":\"%s\",\"vid\":\"%04x\",\"pid\":\"%04x\",\"rate\":%lu,\"ch\":%u,\"bits\":%u,"
-        "\"rs\":%s,\"dry\":%lu,\"tone\":%s,\"pkts\":%lu},"
+        "\"rs\":%s,\"dry\":%lu,\"tone\":%s,\"pkts\":%lu,\"skip\":%lu,\"pmin\":%u,\"pmax\":%u,\"vol\":%s},"
         "\"bt\":{\"state\":0,\"addr\":\"\",\"rate\":0,\"bitpool\":0},"
         "\"load\":{\"dsp\":%d,\"enc\":0}}",
         LHP_FW_VERSION, arr, usb_audio51_is_stereo() ? "true" : "false", g_have_filters ? "true" : "false",
@@ -394,7 +397,7 @@ static void web_state(char *b, int max)
         (unsigned long)g_pipe.in_overruns, (unsigned long)g_pipe.out_underruns, (unsigned long)g_pipe.blocks,
         (int)o.state, o.name, o.vid, o.pid, (unsigned long)o.rate, o.channels, o.bits,
         o.resampled ? "true" : "false", (unsigned long)o.fifo_dry, usbout_tone() ? "true" : "false",
-        (unsigned long)o.packets,
+        (unsigned long)o.packets, (unsigned long)o.skipped, o.pkt_min, o.pkt_max, volstr,
         dsp_pct > 100 ? 100 : dsp_pct);
 }
 

@@ -34,6 +34,10 @@ typedef struct {
     char     name[40];
     uint32_t packets;                     /* isochronous packets sent       */
     uint32_t fifo_dry;                    /* times the playback FIFO ran low */
+    uint32_t skipped;                     /* USB frames that went out without a packet */
+    uint16_t pkt_min, pkt_max;            /* packet sizes seen, bytes */
+    int16_t  vol, vol_min, vol_max;       /* device volume set / its range, 1/256 dB */
+    bool     has_vol;
 } usbout_info_t;
 
 void usbout_core1_main(dhp_t *pipe);      /* never returns */

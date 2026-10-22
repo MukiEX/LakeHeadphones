@@ -220,7 +220,7 @@ function render(){
   if(S.out){const o=S.out;
     $('btDot').className='dot'+(o.state===2?' on':o.state===1?' mid':'');
     kv($('btKv'),{state:OUT[o.state]||o.state,device:o.state?(o.name||'USB audio')+` (${o.vid}:${o.pid})`:'—',
-      format:o.rate?`${o.rate/1000} kHz, ${o.ch} ch, ${o.bits}-bit`+(o.rs?' (resampled)':''):'—','buffer dips':o.dry,'packets sent':o.pkts});
+      format:o.rate?`${o.rate/1000} kHz, ${o.ch} ch, ${o.bits}-bit`+(o.rs?' (resampled)':''):'—','buffer dips':o.dry,'packets sent':o.pkts,'skipped frames':o.skip,'packet bytes':o.pmax?`${o.pmin}–${o.pmax}`:'—','device volume':o.vol||'—'});
     $('tone').hidden=false;$('tone').textContent=o.tone?'Stop test tone':'Test tone';
   }else{
   $('btDot').className='dot'+(S.bt.state===4?' on':S.bt.state===3?' mid':'');
