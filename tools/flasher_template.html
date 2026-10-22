@@ -53,6 +53,28 @@ li { margin: 4px 0; }
 code { font-family: var(--mono); font-size: 14px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
 details summary { cursor: pointer; color: var(--muted); }
 .fine { color: var(--muted); font-size: 13.5px; }
+/* board picker: two cards side by side, each with a small signal-path diagram */
+.boards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 620px) { .boards { grid-template-columns: 1fr; } }
+.board { position: relative; border: 1.5px solid var(--line); border-radius: 10px; padding: 14px 14px 12px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 6px; transition: border-color .15s, background .15s; }
+.board:hover { border-color: var(--muted); }
+.board input { position: absolute; opacity: 0; pointer-events: none; }
+.board:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.board:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.board .tick { position: absolute; top: 12px; right: 12px; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line); }
+.board:has(input:checked) .tick { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px var(--panel); }
+.board h3 { margin: 0; font-size: 16px; padding-right: 26px; }
+.board .for { font-size: 14px; color: var(--muted); }
+.board .for b { color: var(--ink); font-weight: 600; }
+.board svg { width: 100%; max-width: 300px; height: auto; margin: auto auto 0; padding-top: 6px; color: var(--ink); }
+.board svg .ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.board svg .hot { stroke: var(--accent); stroke-width: 2; fill: none; }
+.board svg .ic { stroke: currentColor; stroke-width: 1.6; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.board svg .chip { fill: var(--accent); }
+.board svg text { font: 600 9.5px var(--sans); fill: var(--muted); }
+.board svg text.k { fill: var(--ink); }
+.fwhr { border: 0; border-top: 1px solid var(--line); margin: 12px 0 2px; }
 </style>
 </head>
 <body>
@@ -74,13 +96,37 @@ details summary { cursor: pointer; color: var(--muted); }
     <div class="step"><span class="num">2</span><div><h2>Pick a firmware</h2>
       <p class="fine">Built in: LakeHP __FW_VERSION__.</p></div></div>
     <div id="boardPick">
-    <label class="opt"><input type="radio" name="board" value="pico2w" checked> <b>Raspberry Pi Pico 2 W</b>: plays to Bluetooth headphones</label>
-    <label class="opt"><input type="radio" name="board" value="usba"> <b>Waveshare RP2350-USB-A</b>: plays to a USB DAC or a wireless headset's USB dongle</label>
-    <hr style="border:0;border-top:1px solid var(--line,#ddd);margin:10px 0">
+    <div class="boards">
+      <label class="board">
+        <input type="radio" name="board" value="pico2w" checked><span class="tick"></span>
+        <h3>Raspberry Pi Pico 2 W</h3>
+        <div class="for">For <b>Bluetooth headphones</b>.</div>
+        <svg viewBox="0 0 220 74" role="img" aria-label="Pico 2 W sends Bluetooth to headphones">
+          <rect class="chip" x="8" y="24" width="56" height="22" rx="3"/><text class="k" x="36" y="68" text-anchor="middle">Pico 2 W</text>
+          <g class="hot"><path d="M88 27a10 10 0 0 1 0 14"/><path d="M96 22a17 17 0 0 1 0 24"/><path d="M104 17a24 24 0 0 1 0 34"/></g>
+          <text x="100" y="68" text-anchor="middle">Bluetooth</text>
+          <g class="ic" transform="translate(168,20)"><path d="M3 22v-6a13 13 0 0 1 26 0v6"/><rect x="0" y="19" width="7" height="12" rx="2.5"/><rect x="25" y="19" width="7" height="12" rx="2.5"/></g><text x="184" y="68" text-anchor="middle">headphones</text>
+        </svg>
+      </label>
+      <label class="board">
+        <input type="radio" name="board" value="usba"><span class="tick"></span>
+        <h3>Waveshare RP2350-USB-A</h3>
+        <div class="for">For a <b>USB DAC</b> or a <b>wireless headset's USB dongle</b>.</div>
+        <svg viewBox="0 0 220 74" role="img" aria-label="RP2350-USB-A sends USB audio to a DAC or headset dongle, then headphones">
+          <rect class="chip" x="8" y="24" width="50" height="22" rx="3"/><text class="k" x="33" y="68" text-anchor="middle">USB-A board</text>
+          <path class="hot" d="M58 35h40"/><text x="78" y="28" text-anchor="middle">USB-A</text>
+          <g class="ic"><rect x="100" y="28" width="26" height="14" rx="3"/><path d="M126 32h6v6h-6"/></g>
+          <text x="116" y="68" text-anchor="middle">DAC / dongle</text>
+          <path class="ln" d="M134 35h28" stroke-dasharray="3 3"/>
+          <g class="ic" transform="translate(168,20)"><path d="M3 22v-6a13 13 0 0 1 26 0v6"/><rect x="0" y="19" width="7" height="12" rx="2.5"/><rect x="25" y="19" width="7" height="12" rx="2.5"/></g><text x="184" y="68" text-anchor="middle">headphones</text>
+        </svg>
+      </label>
+    </div>
+    <hr class="fwhr">
     </div>
     <label class="opt"><input type="radio" name="fw" value="normal" checked> Normal (recommended)</label>
     <label class="opt"><input type="radio" name="fw" value="debug"> Debug: adds a USB serial port with a status log</label>
-    <label class="opt"><input type="radio" name="fw" value="custom"> My own build (a UF2 compiled without <code>lakehp_filters.h</code>)</label>
+    <label class="opt"><input type="radio" name="fw" value="custom"> <span>My own build (a UF2 compiled without <code>lakehp_filters.h</code>)</span></label>
     <label class="drop" id="uf2Drop" hidden><input type="file" id="uf2Input" accept=".uf2"><span id="uf2Text"><b>Choose your UF2</b> or drop it here</span></label>
   </section>
 
