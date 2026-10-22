@@ -8,6 +8,9 @@
 #include "pico/flash.h"
 #include "hardware/sync.h"
 #include "hardware/structs/watchdog.h"
+#include "hardware/structs/ioqspi.h"
+#include "hardware/structs/sio.h"
+#include "pico/multicore.h"
 #include "tusb.h"
 #include "pio_usb.h"
 #include "resampler.h"
@@ -81,16 +84,45 @@ void usbout_get_info(usbout_info_t *out)
 }
 void usbout_restart(void) { s_restart_req = true; }
 
-/* For core 0, before it freezes core 1 (BOOTSEL read): returns just after
- * this frame's isochronous packet has gone out, so the pause (a few us) lands
- * where core 1 has nothing due for most of a millisecond. */
-void usbout_quiet_point(void)
+/* ------------------------------------------------------------------ BOOTSEL */
+/* Reading the BOOTSEL button disconnects the flash, so the other core must be
+ * parked in RAM meanwhile. Core 1 does the read itself, right after a USB frame
+ * (its next packet already queued), and parks core 0 for ~10 us. Freezing
+ * core 1 from core 0 instead could hang core 0 in the SDK's lockout handshake
+ * and stall the output. */
+volatile bool usbout_core0_flash_busy;
+static volatile bool s_bootsel;
+bool usbout_bootsel(void) { return s_bootsel; }
+
+static bool __no_inline_not_in_flash_func(bootsel_raw)(void)
 {
-    const uint32_t f0 = pio_usb_host_get_frame_number();
-    const uint32_t t0 = time_us_32();
-    while (pio_usb_host_get_frame_number() == f0)
-        if (time_us_32() - t0 > 2000) return;       /* host not running */
-    busy_wait_us_32(300);                            /* SOF + packet + resubmit */
+    const uint CS_PIN_INDEX = 1;
+    const uint32_t flags = save_and_disable_interrupts();
+    hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
+                    GPIO_OVERRIDE_LOW << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
+                    IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
+    for (volatile int i = 0; i < 1000; ++i);
+    const bool pressed = !(sio_hw->gpio_hi_in & SIO_GPIO_HI_IN_QSPI_CSN_BITS);
+    hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
+                    GPIO_OVERRIDE_NORMAL << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
+                    IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
+    restore_interrupts(flags);
+    return pressed;
+}
+
+static void bootsel_task(void)
+{
+    static uint32_t last_frame, last_ms;
+    const uint32_t fr = pio_usb_host_get_frame_number();
+    if (fr == last_frame) return;                    /* only just after a frame */
+    last_frame = fr;
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    if (now - last_ms < 25) return;
+    last_ms = now;
+    if (usbout_core0_flash_busy) return;
+    if (!multicore_lockout_start_timeout_us(200)) return;
+    s_bootsel = bootsel_raw();
+    multicore_lockout_end_timeout_us(200);
 }
 static volatile bool s_tone;
 void usbout_set_tone(bool on) { s_tone = on; }
@@ -414,6 +446,7 @@ void usbout_core1_main(dhp_t *pipe)
     for (;;) {
         watchdog_hw->scratch[3] = 201;                   /* see main.c: hang checkpoints */
         tuh_task_ext(0, false);
+        bootsel_task();
         watchdog_hw->scratch[3] = 202;
         const uint32_t now = to_ms_since_boot(get_absolute_time());
 

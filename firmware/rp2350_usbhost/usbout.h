@@ -46,7 +46,8 @@ void usbout_core1_main(dhp_t *pipe);      /* never returns */
 usbout_state_t usbout_state(void);
 void usbout_get_info(usbout_info_t *out); /* any core */
 void usbout_restart(void);                /* any core: stop and start the stream again */
-void usbout_quiet_point(void);            /* core 0: wait for an idle moment in the USB frame */
+bool usbout_bootsel(void);                /* BOOTSEL state, read by core 1 every 25 ms */
+extern volatile bool usbout_core0_flash_busy;  /* core 0 sets it around flash writes */
 void usbout_set_tone(bool on);            /* any core: 1 kHz test tone straight to the output */
 bool usbout_tone(void);
 void usbout_set_sof_precise(bool on);     /* any core; also clears the SOF stats */

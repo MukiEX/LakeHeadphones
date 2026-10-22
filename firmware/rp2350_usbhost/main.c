@@ -173,7 +173,10 @@ static void settings_save(void)
 {
     const uint32_t prev = watchdog_hw->scratch[1];
     watchdog_hw->scratch[1] = 60;
+    usbout_core0_flash_busy = true;     /* core 1 skips its BOOTSEL reads meanwhile */
+    busy_wait_us_32(500);               /* let a read in progress finish */
     flash_safe_execute(settings_write_cb, &g_set, 1000);
+    usbout_core0_flash_busy = false;
     watchdog_hw->scratch[1] = prev;
 }
 static uint32_t g_reboot_at;
@@ -243,48 +246,15 @@ static bool dsp_task(void)
 }
 
 /* ------------------------------------------------------------------ button */
-static bool __no_inline_not_in_flash_func(bootsel_raw)(void)
-{
-    const uint CS_PIN_INDEX = 1;
-    uint32_t flags = save_and_disable_interrupts();
-    hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
-                    GPIO_OVERRIDE_LOW << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
-                    IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
-    for (volatile int i = 0; i < 1000; ++i);
-    const bool pressed = !(sio_hw->gpio_hi_in & SIO_GPIO_HI_IN_QSPI_CSN_BITS);
-    hw_write_masked(&ioqspi_hw->io[CS_PIN_INDEX].ctrl,
-                    GPIO_OVERRIDE_NORMAL << IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_LSB,
-                    IO_QSPI_GPIO_QSPI_SS_CTRL_OEOVER_BITS);
-    restore_interrupts(flags);
-    return pressed;
-}
 
-/* Reading BOOTSEL disconnects the flash, so core 1 is parked in RAM for
- * ~10 us; polled every 50 ms. See below for how the pause is placed. */
 static bool button_pressed(void)
 {
 #if LHP_BUTTON_GPIO == -2
-    return false;                       /* no button: never pause core 1 (diagnostics) */
+    return false;                       /* no button (diagnostics) */
 #elif LHP_BUTTON_GPIO >= 0
     return !gpio_get(LHP_BUTTON_GPIO);
 #else
-    /* Core 1 sends a packet every 1 ms and must not be frozen long. Freeze it
-     * at a quiet point in the frame, with this core's interrupts already off,
-     * so none of them can stretch the freeze (core 1 never writes flash here,
-     * so it never needs our interrupts to finish). ~10 us. */
-    CP_MAIN(21);
-    usbout_quiet_point();
-    const uint32_t irq = save_and_disable_interrupts();
-    bool b = false;
-    CP_MAIN(22);
-    if (multicore_lockout_start_timeout_us(500)) {    /* never hang if core 1 is stuck */
-        CP_MAIN(23);
-        b = bootsel_raw();
-        CP_MAIN(24);
-        multicore_lockout_end_timeout_us(500);
-    }
-    restore_interrupts(irq);
-    return b;
+    return usbout_bootsel();            /* read by core 1 at a safe point, see usbout.c */
 #endif
 }
 
@@ -602,6 +572,7 @@ int main(void)
     printf("LakeHP USB host: %s, %d filters, %lu MHz\n", g_have_filters ? dhp_room_name(g_pipe.room) : "no rooms",
            nfilt, (unsigned long)(clock_get_hz(clk_sys) / 1000000));
 
+    multicore_lockout_victim_init();          /* core 1 parks us briefly to read BOOTSEL */
     static uint32_t core1_stack[2048];
     multicore_launch_core1_with_stack(core1_entry, core1_stack, sizeof core1_stack);
 
