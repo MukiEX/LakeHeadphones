@@ -11,6 +11,14 @@
 #include "pio_usb.h"
 #include "resampler.h"
 uint32_t pio_usb_host_get_frame_number(void);
+extern volatile bool pio_usb_sof_precise;              /* patches/pico-pio-usb-iso.patch */
+extern volatile uint32_t pio_usb_sof_dev_max_us, pio_usb_sof_dev_over;
+void usbout_set_sof_precise(bool on)
+{
+    pio_usb_sof_precise = on;
+    pio_usb_sof_dev_max_us = 0;
+    pio_usb_sof_dev_over = 0;
+}
 #if LHP_DEBUG_CDC
 #include "dbg_cdc.h"
 #define LOG1(...) dbg_logf(__VA_ARGS__)
@@ -64,6 +72,9 @@ void usbout_get_info(usbout_info_t *out)
         __dmb();
         *out = s_info;
         __dmb();
+        out->sof_precise = pio_usb_sof_precise;
+        out->sof_dev_max_us = pio_usb_sof_dev_max_us;
+        out->sof_dev_over = pio_usb_sof_dev_over;
         if (!(a & 1) && a == s_info_seq) return;
     }
 }

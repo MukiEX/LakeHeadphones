@@ -187,19 +187,61 @@ index 3635db4..04e2c4b 100644
 +#define PIO_USB_ISO_EP_CNT 2
 +#endif
 diff --git a/src/pio_usb_host.c b/src/pio_usb_host.c
-index de50b58..3be0f40 100644
+index de50b58..1f3ed26 100644
 --- a/src/pio_usb_host.c
 +++ b/src/pio_usb_host.c
-@@ -252,6 +252,8 @@ static bool __no_inline_not_in_flash_func(connection_check)(root_port_t *port) {
+@@ -252,6 +252,42 @@ static bool __no_inline_not_in_flash_func(connection_check)(root_port_t *port) {
  static int usb_setup_transaction(pio_port_t *pp, endpoint_t *ep);
  static int usb_in_transaction(pio_port_t *pp, endpoint_t *ep);
  static int usb_out_transaction(pio_port_t *pp, endpoint_t *ep);
 +static void usb_iso_in_transaction(pio_port_t *pp, endpoint_t *ep);
 +static void usb_iso_out_transaction(pio_port_t *pp, endpoint_t *ep);
++
++// SOF timing. Synchronous isochronous devices (many USB audio dongles) lock
++// their audio clock to SOF, so its jitter matters. The timer interrupt that
++// runs this handler can start late by however long the core had interrupts
++// off; in precise mode the handler is entered a little early and SOF is sent
++// at an exact time, 1000 us after the previous one.
++volatile bool pio_usb_sof_precise = true;
++volatile uint32_t pio_usb_sof_dev_max_us;   // largest |interval - 1000 us| seen
++volatile uint32_t pio_usb_sof_dev_over;     // intervals off by more than 2 us
++#define PIO_USB_SOF_LEAD_US 40
++
++static inline __force_inline void sof_wait_and_measure(void) {
++  static uint32_t target, last;
++  uint32_t now = time_us_32();
++  if (pio_usb_sof_precise) {
++    int32_t const ahead = (int32_t)(target - now);
++    if (target == 0 || ahead < -300 || ahead > 1100) {
++      target = now + PIO_USB_SOF_LEAD_US;   // (re)sync
++    }
++    while ((int32_t)(time_us_32() - target) < 0) {
++    }
++    target += 1000;
++  } else {
++    target = 0;
++  }
++  now = time_us_32();
++  if (last) {
++    int32_t d = (int32_t)(now - last) - 1000;
++    if (d < 0) d = -d;
++    if ((uint32_t)d > pio_usb_sof_dev_max_us && d < 100000) pio_usb_sof_dev_max_us = (uint32_t)d;
++    if (d > 2) pio_usb_sof_dev_over++;
++  }
++  last = now;
++}
  
  void __not_in_flash_func(pio_usb_host_frame)(void) {
    if (!timer_active) {
-@@ -290,7 +292,8 @@ void __not_in_flash_func(pio_usb_host_frame)(void) {
+@@ -270,6 +306,7 @@ void __not_in_flash_func(pio_usb_host_frame)(void) {
+     configure_root_port(pp, root);
+     if (root->is_fullspeed) {
+       // Send SOF for full speed
++      sof_wait_and_measure();
+       pio_usb_bus_usb_transfer(pp, sof_packet_encoded, sof_packet_encoded_len);
+     } else {
+       // Send Keep alive for low speed
+@@ -290,7 +327,8 @@ void __not_in_flash_func(pio_usb_host_frame)(void) {
           ep_pool_idx++) {
        endpoint_t *ep = PIO_USB_ENDPOINT(ep_pool_idx);
        if ((ep->root_idx == root_idx) && ep->size) {
@@ -209,7 +251,7 @@ index de50b58..3be0f40 100644
  
          if (is_periodic && (ep->interval_counter > 0)) {
            ep->interval_counter--;
-@@ -306,6 +309,13 @@ void __not_in_flash_func(pio_usb_host_frame)(void) {
+@@ -306,6 +344,13 @@ void __not_in_flash_func(pio_usb_host_frame)(void) {
  
            if (ep->ep_num == 0 && ep->data_id == USB_PID_SETUP) {
              usb_setup_transaction(pp, ep);
@@ -223,7 +265,7 @@ index de50b58..3be0f40 100644
            } else {
              if (ep->ep_num & EP_IN) {
                usb_in_transaction(pp, ep);
-@@ -408,6 +418,7 @@ void pio_usb_host_close_device(uint8_t root_idx, uint8_t device_address) {
+@@ -408,6 +453,7 @@ void pio_usb_host_close_device(uint8_t root_idx, uint8_t device_address) {
      endpoint_t *ep = PIO_USB_ENDPOINT(ep_pool_idx);
      if ((ep->root_idx == root_idx) && (ep->dev_addr == device_address) &&
          ep->size) {
@@ -231,7 +273,7 @@ index de50b58..3be0f40 100644
        ep->size = 0;
        ep->has_transfer = false;
      }
-@@ -459,6 +470,7 @@ bool pio_usb_host_endpoint_close(uint8_t root_idx, uint8_t device_address,
+@@ -459,6 +505,7 @@ bool pio_usb_host_endpoint_close(uint8_t root_idx, uint8_t device_address,
      return false; // endpoint not opened
    }
  
@@ -239,7 +281,7 @@ index de50b58..3be0f40 100644
    ep->size = 0; // mark as closed
    return true;
  }
-@@ -628,6 +640,45 @@ static int __no_inline_not_in_flash_func(usb_out_transaction)(pio_port_t *pp,
+@@ -628,6 +675,45 @@ static int __no_inline_not_in_flash_func(usb_out_transaction)(pio_port_t *pp,
    return res;
  }
  

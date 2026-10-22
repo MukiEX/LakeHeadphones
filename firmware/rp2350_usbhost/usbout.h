@@ -38,6 +38,8 @@ typedef struct {
     uint16_t pkt_min, pkt_max;            /* packet sizes seen, bytes */
     int16_t  vol, vol_min, vol_max;       /* device volume set / its range, 1/256 dB */
     bool     has_vol;
+    bool     sof_precise;                 /* SOF sent at exact 1 ms (PIO-USB patch) */
+    uint32_t sof_dev_max_us, sof_dev_over;/* SOF interval error: max, count > 2 us */
 } usbout_info_t;
 
 void usbout_core1_main(dhp_t *pipe);      /* never returns */
@@ -47,5 +49,6 @@ void usbout_restart(void);                /* any core: stop and start the stream
 void usbout_quiet_point(void);            /* core 0: wait for an idle moment in the USB frame */
 void usbout_set_tone(bool on);            /* any core: 1 kHz test tone straight to the output */
 bool usbout_tone(void);
+void usbout_set_sof_precise(bool on);     /* any core; also clears the SOF stats */
 
 #endif

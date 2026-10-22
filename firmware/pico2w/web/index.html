@@ -149,7 +149,7 @@ svg text{fill:var(--dim);font:11px system-ui,sans-serif}
   </div>
   <h2 id="hsH">Pair a different headset</h2>
   <p class="note" id="hsNote">Forgets the remembered headset and starts pairing. Put the new one in pairing mode close to the Pico; it picks the nearest headphones within a few seconds and you hear two rising tones.</p>
-  <div class="row"><button class="b danger" id="forget">Forget headset and pair</button><button class="b" id="tone" hidden>Test tone</button></div>
+  <div class="row"><button class="b danger" id="forget">Forget headset and pair</button><button class="b" id="tone" hidden>Test tone</button><button class="b" id="sofp" hidden>Precise timing</button></div>
 </section>
 
 <section id="system">
@@ -220,7 +220,8 @@ function render(){
   if(S.out){const o=S.out;
     $('btDot').className='dot'+(o.state===2?' on':o.state===1?' mid':'');
     kv($('btKv'),{state:OUT[o.state]||o.state,device:o.state?(o.name||'USB audio')+` (${o.vid}:${o.pid})`:'—',
-      format:o.rate?`${o.rate/1000} kHz, ${o.ch} ch, ${o.bits}-bit`+(o.rs?' (resampled)':''):'—','buffer dips':o.dry,'packets sent':o.pkts,'skipped frames':o.skip,'packet bytes':o.pmax?`${o.pmin}–${o.pmax}`:'—','device volume':o.vol||'—'});
+      format:o.rate?`${o.rate/1000} kHz, ${o.ch} ch, ${o.bits}-bit`+(o.rs?' (resampled)':''):'—','buffer dips':o.dry,'packets sent':o.pkts,'skipped frames':o.skip,'packet bytes':o.pmax?`${o.pmin}–${o.pmax}`:'—','device volume':o.vol||'—','frame timing':o.sofp===undefined?'—':(o.sofp?'precise':'timer')+`, worst ${o.sofmax} µs, off >2 µs: ${o.sofover}`});
+    $('sofp').hidden=o.sofp===undefined;$('sofp').textContent=o.sofp?'Use timer frame timing':'Use precise frame timing';
     $('tone').hidden=false;$('tone').textContent=o.tone?'Stop test tone':'Test tone';
   }else{
   $('btDot').className='dot'+(S.bt.state===4?' on':S.bt.state===3?' mid':'');
@@ -256,6 +257,7 @@ function send(o){editing=1;clearTimeout(tm);tm=setTimeout(async()=>{await post(o
 document.querySelectorAll('#presets .card.pick').forEach(c=>c.onclick=async()=>{await post({preset:c.dataset.preset});toast(c.querySelector('h3').textContent)});
 $('saveSound').onclick=$('saveSur').onclick=async()=>{const r=await post({action:'save'});toast(r.msg||'Saved')};
 $('revert').onclick=async()=>{await post({action:'revert'});toast('Back to saved')};
+$('sofp').onclick=async()=>{await post({action:'sofprec'});toast('Frame timing switched; counters reset')};
 $('tone').onclick=async()=>{await post({action:'tone'});toast(S&&S.out&&S.out.tone?'Tone off':'1 kHz tone: left, then right, alternating each second')};
 $('forget').onclick=async()=>{if(S&&S.out){await post({action:'restart'});toast('Restarting output…');return}if(confirm('Forget the current headset?')){await post({action:'forget'});toast('Pairing…')}};
 $('webOff').onclick=async()=>{if(confirm('Remove the settings adapter? Press BOOTSEL 5 times to bring it back.')){await post({action:'weboff'});toast('Restarting…')}};

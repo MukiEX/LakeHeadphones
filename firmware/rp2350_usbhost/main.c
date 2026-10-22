@@ -389,7 +389,7 @@ static void web_state(char *b, int max)
         "\"saved\":{\"arr\":\"%s\",\"preset\":\"%s\",\"room\":%u,\"lowlat\":%s},"
         "\"usb\":{\"stream\":%s,\"rx\":%lu,\"in_ovr\":%lu,\"out_under\":%lu,\"blocks\":%lu},"
         "\"out\":{\"state\":%d,\"name\":\"%s\",\"vid\":\"%04x\",\"pid\":\"%04x\",\"rate\":%lu,\"ch\":%u,\"bits\":%u,"
-        "\"rs\":%s,\"dry\":%lu,\"tone\":%s,\"pkts\":%lu,\"skip\":%lu,\"pmin\":%u,\"pmax\":%u,\"vol\":%s},"
+        "\"rs\":%s,\"dry\":%lu,\"tone\":%s,\"pkts\":%lu,\"skip\":%lu,\"pmin\":%u,\"pmax\":%u,\"vol\":%s,\"sofp\":%s,\"sofmax\":%lu,\"sofover\":%lu},"
         "\"bt\":{\"state\":0,\"addr\":\"\",\"rate\":0,\"bitpool\":0},"
         "\"load\":{\"dsp\":%d,\"enc\":0}}",
         LHP_FW_VERSION, arr, usb_audio51_is_stereo() ? "true" : "false", g_have_filters ? "true" : "false",
@@ -404,6 +404,7 @@ static void web_state(char *b, int max)
         (int)o.state, o.name, o.vid, o.pid, (unsigned long)o.rate, o.channels, o.bits,
         o.resampled ? "true" : "false", (unsigned long)o.fifo_dry, usbout_tone() ? "true" : "false",
         (unsigned long)o.packets, (unsigned long)o.skipped, o.pkt_min, o.pkt_max, volstr,
+        o.sof_precise ? "true" : "false", (unsigned long)o.sof_dev_max_us, (unsigned long)o.sof_dev_over,
         dsp_pct > 100 ? 100 : dsp_pct);
 }
 
@@ -464,6 +465,11 @@ static void web_apply(const char *body, char *resp, int max)
         } else if (!strcmp(str, "tone")) {
             usbout_set_tone(!usbout_tone());
             msg = usbout_tone() ? "Test tone on" : "Test tone off";
+        } else if (!strcmp(str, "sofprec")) {
+            usbout_info_t o;
+            usbout_get_info(&o);
+            usbout_set_sof_precise(!o.sof_precise);
+            msg = o.sof_precise ? "Precise SOF off" : "Precise SOF on";
         } else if (!strcmp(str, "restart")) {
             usbout_restart();
             msg = "Restarting the output";
