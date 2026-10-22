@@ -38,6 +38,7 @@
 #include "hardware/vreg.h"
 #include "hardware/flash.h"
 #include "hardware/watchdog.h"
+#include "hardware/structs/watchdog.h"
 #include "hardware/structs/ioqspi.h"
 #include "hardware/structs/sio.h"
 #include "tusb.h"
@@ -57,6 +58,32 @@
 #if LHP_DEBUG_CDC
 #include "dbg_cdc.h"
 #endif
+
+/* ------------------------------------------------------------------ hang checkpoints */
+/* Where core 0 is, kept in watchdog scratch registers (they survive a reset):
+ * after a watchdog reset (core 0 stuck for 2 s) the log and the settings page
+ * say which step it was stuck in. scratch[0] magic, [1] main loop step,
+ * [2] USB interrupt step, [3] core 1 step. */
+#define CP_MAGIC 0x4C485043u
+#define CP_MAIN(n) (watchdog_hw->scratch[1] = (n))
+#define CP_IRQ(n)  (watchdog_hw->scratch[2] = (n))
+static char g_last_reset[96];
+static const char *cp_name(uint32_t n)
+{
+    switch (n) {
+    case 0: return "idle";
+    case 1: return "DSP"; case 2: return "button"; case 3: return "LED"; case 4: return "restart check";
+    case 5: return "network (lwIP)"; case 6: return "debug log";
+    case 21: return "button: waiting for USB frame"; case 22: return "button: freezing core 1";
+    case 23: return "button: reading BOOTSEL"; case 24: return "button: releasing core 1";
+    case 50: return "settings: applying a change"; case 51: return "settings: building state";
+    case 60: return "saving settings to flash";
+    case 101: return "USB irq: tud_task"; case 102: return "USB irq: audio pump";
+    case 103: return "USB irq: network"; case 104: return "USB irq: debug log"; case 110: return "USB irq (USBCTRL)";
+    case 201: return "core 1: USB host task"; case 202: return "core 1: mount/start"; case 203: return "core 1: feed";
+    default: return "?";
+    }
+}
 
 /* 2 MB flash: firmware below 1 MB, filters at 1 MB, settings near the end. */
 #define FILTER_REGION_OFFSET 0x100000u
@@ -142,7 +169,13 @@ static void settings_write_cb(void *param)
 }
 /* Pauses core 1 (the USB output) for ~50 ms: an audible gap, and the output
  * device may need its stream restarted. Only on an explicit save. */
-static void settings_save(void) { flash_safe_execute(settings_write_cb, &g_set, 1000); }
+static void settings_save(void)
+{
+    const uint32_t prev = watchdog_hw->scratch[1];
+    watchdog_hw->scratch[1] = 60;
+    flash_safe_execute(settings_write_cb, &g_set, 1000);
+    watchdog_hw->scratch[1] = prev;
+}
 static uint32_t g_reboot_at;
 
 static lhp_engine g_eng;
@@ -178,17 +211,22 @@ static void usb_pump(void)
 static bool usb_service_cb(repeating_timer_t *t)
 {
     (void)t;
+    CP_IRQ(101);
     tud_task();
+    CP_IRQ(102);
     usb_pump();
 #if LHP_WEBCFG
+    CP_IRQ(103);
     if (usb_audio51_has_network()) webcfg_usb_service();
 #endif
 #if LHP_DEBUG_CDC
+    CP_IRQ(104);
     dbg_cdc_task();
 #endif
+    CP_IRQ(0);
     return true;
 }
-static void usb_irq_task(void) { tud_task(); }
+static void usb_irq_task(void) { CP_IRQ(110); tud_task(); CP_IRQ(0); }
 
 /* ------------------------------------------------------------------ DSP (core 0 main loop) */
 static volatile uint32_t g_dsp_us_sum, g_dsp_n, g_dsp_us_max, g_dsp_us_total;
@@ -234,11 +272,15 @@ static bool button_pressed(void)
      * at a quiet point in the frame, with this core's interrupts already off,
      * so none of them can stretch the freeze (core 1 never writes flash here,
      * so it never needs our interrupts to finish). ~10 us. */
+    CP_MAIN(21);
     usbout_quiet_point();
     const uint32_t irq = save_and_disable_interrupts();
     bool b = false;
+    CP_MAIN(22);
     if (multicore_lockout_start_timeout_us(500)) {    /* never hang if core 1 is stuck */
+        CP_MAIN(23);
         b = bootsel_raw();
+        CP_MAIN(24);
         multicore_lockout_end_timeout_us(500);
     }
     restore_interrupts(irq);
@@ -331,6 +373,7 @@ static void reboot_task(uint32_t now)
 {
     if (!g_reboot_at || (int32_t)(now - g_reboot_at) < 0) return;
     settings_save();
+    watchdog_hw->scratch[0] = 0;                        /* a planned restart, not a hang */
     watchdog_reboot(0, 0, 10);
     for (;;) tight_loop_contents();
 }
@@ -376,6 +419,7 @@ static void json_safe(char *s) { for (; *s; s++) if (*s == '"' || *s == '\\' || 
 
 static void web_state(char *b, int max)
 {
+    CP_MAIN(51);
     static uint32_t last_ms, last_dsp, last_rx, rx_rate;
     const uint32_t now = to_ms_since_boot(get_absolute_time()), dt = now - last_ms ? now - last_ms : 1;
     const uint32_t dsp = g_dsp_us_total;
@@ -394,7 +438,7 @@ static void web_state(char *b, int max)
     const char *arr = usb_audio51_is_stereo() ? "stereo" : usb_audio51_channels() == 8 ? "71" : "51";
     const char *saved_arr = g_set.stereo ? "stereo" : g_set.ch8 ? "71" : "51";
     snprintf(b, max,
-        "{\"fw\":\"%s\",\"arr\":\"%s\",\"stereo\":%s,\"filters\":%s,\"room\":%d,\"lowlat\":%s,"
+        "{\"fw\":\"%s\",\"reset\":\"%s\",\"arr\":\"%s\",\"stereo\":%s,\"filters\":%s,\"room\":%d,\"lowlat\":%s,"
         "\"preset\":\"%s\","
         "\"sur\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
         "\"back\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
@@ -404,7 +448,7 @@ static void web_state(char *b, int max)
         "\"rs\":%s,\"dry\":%lu,\"tone\":%s,\"pkts\":%lu,\"skip\":%lu,\"pmin\":%u,\"pmax\":%u,\"vol\":%s,\"sofp\":%s,\"sofmax\":%lu,\"sofover\":%lu},"
         "\"bt\":{\"state\":0,\"addr\":\"\",\"rate\":0,\"bitpool\":0},"
         "\"load\":{\"dsp\":%d,\"enc\":0}}",
-        LHP_FW_VERSION, arr, usb_audio51_is_stereo() ? "true" : "false", g_have_filters ? "true" : "false",
+        LHP_FW_VERSION, g_last_reset, arr, usb_audio51_is_stereo() ? "true" : "false", g_have_filters ? "true" : "false",
         dhp_room(&g_pipe), dhp_low_latency(&g_pipe) ? "true" : "false",
         dhp_preset_name(dhp_preset_of(&s, &k)),
         (double)s.near_delay, (double)s.far_hf_db, (double)s.back_eq, (double)lhp_surround_azimuth(&s),
@@ -439,6 +483,7 @@ static bool apply_pair(const char *body, const char *prefix, lhp_surround_t *s)
 
 static void web_apply(const char *body, char *resp, int max)
 {
+    CP_MAIN(50);
     float v;
     char str[24];
     const char *msg = "ok";
@@ -509,6 +554,14 @@ int main(void)
     gpio_init(LHP_BUTTON_GPIO);
     gpio_pull_up(LHP_BUTTON_GPIO);
 #endif
+    if (watchdog_enable_caused_reboot() && watchdog_hw->scratch[0] == CP_MAGIC) {
+        snprintf(g_last_reset, sizeof g_last_reset, "stuck in %s / %s / %s",
+                 cp_name(watchdog_hw->scratch[1]), cp_name(watchdog_hw->scratch[2]), cp_name(watchdog_hw->scratch[3]));
+        LOG0("*** Restarted by the watchdog: core 0 was %s\n", g_last_reset);
+        printf("Watchdog reset: %s\n", g_last_reset);
+    }
+    watchdog_hw->scratch[0] = 0;
+    watchdog_hw->scratch[1] = watchdog_hw->scratch[2] = watchdog_hw->scratch[3] = 0;
     status_led_init();
     status_led_rgb(16, 16, 16);
     LHP_REGION_TAG_KEEP();
@@ -567,18 +620,28 @@ int main(void)
     add_repeating_timer_us(-250, usb_service_cb, NULL, &usb_timer);
     irq_add_shared_handler(USBCTRL_IRQ, usb_irq_task, PICO_SHARED_IRQ_HANDLER_LOWEST_ORDER_PRIORITY);
 
+    watchdog_hw->scratch[0] = CP_MAGIC;
+    watchdog_enable(2000, true);                        /* core 0 stuck for 2 s: reset */
     for (;;) {
+        watchdog_update();
         const uint32_t now = to_ms_since_boot(get_absolute_time());
+        CP_MAIN(1);
         const bool did = dsp_task();
+        CP_MAIN(2);
         button_task(now);
+        CP_MAIN(3);
         led_task(now);
+        CP_MAIN(4);
         reboot_task(now);
 #if LHP_WEBCFG
+        CP_MAIN(5);
         if (web) webcfg_poll();
 #endif
 #if LHP_DEBUG_CDC
+        CP_MAIN(6);
         status_task(now);
 #endif
+        CP_MAIN(0);
         (void)did;
     }
 }

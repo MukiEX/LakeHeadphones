@@ -7,6 +7,7 @@
 #include "pico/stdlib.h"
 #include "pico/flash.h"
 #include "hardware/sync.h"
+#include "hardware/structs/watchdog.h"
 #include "tusb.h"
 #include "pio_usb.h"
 #include "resampler.h"
@@ -411,7 +412,9 @@ void usbout_core1_main(dhp_t *pipe)
     LOG1("usbout: USB host on GP%d/GP%d\n", USBOUT_PIO_USB_DP_PIN, USBOUT_PIO_USB_DP_PIN + 1);
 
     for (;;) {
+        watchdog_hw->scratch[3] = 201;                   /* see main.c: hang checkpoints */
         tuh_task_ext(0, false);
+        watchdog_hw->scratch[3] = 202;
         const uint32_t now = to_ms_since_boot(get_absolute_time());
 
         if (s_mount_at && (int32_t)(now - s_mount_at) >= 0) {
@@ -434,6 +437,7 @@ void usbout_core1_main(dhp_t *pipe)
             }
         }
 
+        watchdog_hw->scratch[3] = 203;
         if (s_state == USBOUT_STREAMING) {
             drain_virtual(true);
             feed();

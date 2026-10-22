@@ -233,7 +233,7 @@ function render(){
    if(S.usb.in_ovr!==undefined){u['input overruns']=S.usb.in_ovr;u['output underruns']=S.usb.out_under;u['DSP blocks']=S.usb.blocks}
    kv($('usbKv'),u);}
   kv($('loadKv'),S.out?{'Virtualizer DSP (core 0)':S.load.dsp+'%'}:{'Virtualizer DSP (core 1)':S.load.dsp+'%','BT encoder (core 0)':S.load.enc+'%'});
-  kv($('fwKv'),{version:S.fw,filters:S.filters?'3 rooms':'missing',settings:'192.168.20.1'});
+  {const f={version:S.fw,filters:S.filters?'3 rooms':'missing',settings:'192.168.20.1'};if(S.reset)f['last reset']='watchdog: '+S.reset;kv($('fwKv'),f);}
 }
 async function poll(){
   try{S=await (await tfetch('/api/state')).json();setupOut();$('link').textContent='connected';render()}
