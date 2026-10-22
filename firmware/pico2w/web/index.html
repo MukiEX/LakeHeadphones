@@ -85,6 +85,7 @@ svg text{fill:var(--dim);font:11px system-ui,sans-serif}
     <label>Low-latency stereo</label>
     <select id="lowlat"><option value="0">Off: virtual rooms</option><option value="1">On: plain downmix, ~40 ms less delay</option></select>
   </div>
+  <p class="note" id="fsrcNote"></p>
   <div class="row" style="margin-top:22px"><button class="b pri" id="saveSound">Save as power-up default</button><span class="dirty" id="dirty1"></span></div>
   <p class="note">Changes play immediately. Saving writes to flash, which causes a short gap in the sound.</p>
 </section>
@@ -208,6 +209,7 @@ function render(){
   const is71=S.arr==='71';
   document.querySelectorAll('#arr .card').forEach(c=>c.classList.toggle('sel',c.dataset.a===S.arr));
   $('arrNote').textContent=S.saved.arr!==S.arr?'Restarting…':'';
+  $('fsrcNote').textContent=S.fsrc?'Room filters from: '+S.fsrc:(S.filters?'Room filters loaded (source not recorded: add them again with the flasher to see it).':'');
   if(!S.filters)$('arrNote').textContent='No room filters on this Pico: add them with lakehp_flasher.html. Running as plain stereo.';
   if(document.activeElement!==$('room'))$('room').value=S.room;
   if(document.activeElement!==$('lowlat'))$('lowlat').value=S.lowlat?1:0;
@@ -235,7 +237,7 @@ function render(){
    if(S.usb.in_ovr!==undefined){u['input overruns']=S.usb.in_ovr;u['output underruns']=S.usb.out_under;u['DSP blocks']=S.usb.blocks}
    kv($('usbKv'),u);}
   kv($('loadKv'),S.out?{'Virtualizer DSP (core 0)':S.load.dsp+'%'}:{'Virtualizer DSP (core 1)':S.load.dsp+'%','BT encoder (core 0)':S.load.enc+'%'});
-  {const f={version:S.fw,filters:S.filters?'3 rooms':'missing',settings:'192.168.20.1'};if(S.reset)f['last reset']='watchdog: '+S.reset;kv($('fwKv'),f);}
+  {const f={version:S.fw,filters:S.filters?'3 rooms':'missing'};if(S.fsrc)f['filters from']=S.fsrc;f.settings='192.168.20.1';if(S.reset)f['last reset']='watchdog: '+S.reset;kv($('fwKv'),f);}
 }
 async function poll(){
   try{S=await (await tfetch('/api/state')).json();setupOut();$('link').textContent='connected';render()}

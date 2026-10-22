@@ -102,7 +102,19 @@ def crc32(b):
     return zlib.crc32(b) & 0xFFFFFFFF
 
 
-def build_region(d, sel):
+def region_label(dll_name, ver, sel):
+    """Where the filters came from, shown on the settings page: file name,
+    version and the room names (when the DLL has them and they carry no
+    brand name). Same rule as region label in flasher_template.html."""
+    s = dll_name + (" " + ver if ver else "")
+    names = [h["name"].strip() for h in sorted(sel, key=lambda h: h["room"])]
+    if names and all(names) and not any("dolby" in x.lower() for x in names):
+        s += " \u00b7 " + " / ".join(names)
+    s = "".join(c if 32 <= ord(c) < 127 else ("-" if c == "\u00b7" else "?") for c in s)
+    return s[:95]
+
+
+def build_region(d, sel, label=None):
     """Filter region image, see firmware/common/lhp_filter_region.h."""
     n = len(sel)
     off = 20 + 16 * n
@@ -112,6 +124,9 @@ def build_region(d, sel):
         table += struct.pack("<4I", h["rate"], h["room"], off + len(blobs), len(blob))
         blobs += blob + b"\0" * (-len(blob) % 4)
     body = table + blobs
+    if label:                                   # optional source label after the blobs
+        t = label.encode("ascii", "replace")[:95]
+        body += b"LHPS" + struct.pack("<I", len(t)) + t + b"\0" * (-len(t) % 4)
     total = 20 + len(body)
     return struct.pack("<5I", 0x4650484C, 1, n, total, crc32(body)) + body
 
@@ -209,7 +224,7 @@ def main():
             print("wrote", fn, file=sys.stderr)
 
     if a.region or a.uf2:
-        region = build_region(d, sel)
+        region = build_region(d, sel, region_label(os.path.basename(a.dll), ver, [h for h in sel if h["rate"] == 48000]))
         if a.region:
             open(a.region, "wb").write(region)
             print(f"wrote {a.region} ({len(region)} bytes)", file=sys.stderr)
@@ -239,7 +254,10 @@ def main():
                   "static const lhp_filter_entry lhp_filters[] = {"]
         for h, ident, n in tbl:
             lines.append(f"  {{ {h['rate']}u, {h['room']}, {ident}, {n} }},")
-        lines += ["};", "#define LHP_NUM_FILTERS (sizeof(lhp_filters)/sizeof(lhp_filters[0]))", "",
+        src = region_label(os.path.basename(a.dll), ver, [h for h in sel if h["rate"] == 48000])
+        src = src.replace("\\", "/").replace('"', "'")
+        lines += ["};", "#define LHP_NUM_FILTERS (sizeof(lhp_filters)/sizeof(lhp_filters[0]))",
+                  f'#define LHP_FILTER_SOURCE "{src}"', "",
                   "static inline const lhp_filter_entry *lhp_find_filter(uint32_t rate, int room) {",
                   "  for (size_t i = 0; i < LHP_NUM_FILTERS; i++)",
                   "    if (lhp_filters[i].rate == rate && lhp_filters[i].room == room) return &lhp_filters[i];",

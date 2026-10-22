@@ -161,6 +161,7 @@ static lhp_engine g_eng;
 static dhp_t      g_pipe;
 static dhp_filter_t g_filters[16];
 static bool g_have_filters;
+static char g_filter_src[112];          /* where the room filters came from (settings page) */
 
 /* ------------------------------------------------------------------ USB glue */
 static volatile uint32_t g_usb_frames;    /* frames moved from the USB FIFO into the pipeline */
@@ -470,7 +471,7 @@ static void web_state(char *b, int max)
     const char *arr = usb_audio51_is_stereo() ? "stereo" : usb_audio51_channels() == 8 ? "71" : "51";
     const char *saved_arr = g_set.stereo ? "stereo" : g_set.ch8 ? "71" : "51";
     snprintf(b, max,
-        "{\"fw\":\"%s\",\"arr\":\"%s\",\"stereo\":%s,\"filters\":%s,\"room\":%d,\"lowlat\":%s,"
+        "{\"fw\":\"%s\",\"arr\":\"%s\",\"stereo\":%s,\"filters\":%s,\"fsrc\":\"%s\",\"room\":%d,\"lowlat\":%s,"
         "\"preset\":\"%s\","
         "\"sur\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
         "\"back\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
@@ -478,7 +479,7 @@ static void web_state(char *b, int max)
         "\"sur\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f},\"back\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f}},"
         "\"usb\":{\"stream\":%s,\"rx\":%lu},\"bt\":{\"state\":%d,\"addr\":\"%s\",\"rate\":%d,\"bitpool\":%d},"
         "\"load\":{\"dsp\":%d,\"enc\":%d}}",
-        LHP_FW_VERSION, arr, usb_audio51_is_stereo() ? "true" : "false", g_have_filters ? "true" : "false",
+        LHP_FW_VERSION, arr, usb_audio51_is_stereo() ? "true" : "false", g_have_filters ? "true" : "false", g_filter_src,
         dhp_room(&g_pipe), dhp_low_latency(&g_pipe) ? "true" : "false",
         dhp_preset_name(dhp_preset_of(&s, &k)),
         (double)s.near_delay, (double)s.far_hf_db, (double)s.back_eq, (double)lhp_surround_azimuth(&s),
@@ -580,11 +581,17 @@ int main(void)
     int nfilt;
 #if LHP_FILTERS_EMBEDDED
     nfilt = (int)LHP_NUM_FILTERS;
+#ifdef LHP_FILTER_SOURCE
+    snprintf(g_filter_src, sizeof g_filter_src, "%s (built in)", LHP_FILTER_SOURCE);
+#else
+    snprintf(g_filter_src, sizeof g_filter_src, "built in");
+#endif
     for (int i = 0; i < nfilt && i < 16; i++)
         g_filters[i] = (dhp_filter_t){ lhp_filters[i].rate, lhp_filters[i].room,
                                        lhp_filters[i].blob, (uint32_t)lhp_filters[i].len };
 #else
     nfilt = lhp_region_parse((const uint8_t *)(XIP_BASE + FILTER_REGION_OFFSET), FILTER_REGION_MAX, g_filters, 16);
+    lhp_region_label((const uint8_t *)(XIP_BASE + FILTER_REGION_OFFSET), FILTER_REGION_MAX, g_filter_src, sizeof g_filter_src);
     if (nfilt < 0) {
         printf("No room filters in flash (code %d): add them with tools/lakehp_flasher.html\n", nfilt);
         nfilt = 0;

@@ -46,6 +46,34 @@ static inline uint32_t lhp_region_crc32(const uint8_t *p, uint32_t n)
     return ~c;
 }
 
+/* Optional label after the last blob: 'LHPS', u32 length, ASCII text (where
+ * the filters came from). Copies it into out (NUL-terminated); returns false
+ * if the region has none (older images). */
+static inline bool lhp_region_label(const uint8_t *base, uint32_t max_size, char *out, int max)
+{
+    out[0] = 0;
+    if (lhp_region_rd32(base) != LHP_REGION_MAGIC) return false;
+    const uint32_t count = lhp_region_rd32(base + 8), total = lhp_region_rd32(base + 12);
+    if (total > max_size || 20 + 16 * count > total) return false;
+    uint32_t end = 20 + 16 * count;
+    for (uint32_t i = 0; i < count; i++) {
+        const uint8_t *e = base + 20 + 16 * i;
+        const uint32_t stop = lhp_region_rd32(e + 8) + lhp_region_rd32(e + 12);
+        if (stop > end && stop <= total) end = stop;
+    }
+    end = (end + 3u) & ~3u;
+    if (end + 8 > total || memcmp(base + end, "LHPS", 4)) return false;
+    uint32_t len = lhp_region_rd32(base + end + 4);
+    if (end + 8 + len > total) return false;
+    if (len > (uint32_t)max - 1) len = (uint32_t)max - 1;
+    for (uint32_t i = 0; i < len; i++) {
+        const char c = (char)base[end + 8 + i];
+        out[i] = (c >= 32 && c < 127 && c != '"' && c != '\\') ? c : '?';
+    }
+    out[len] = 0;
+    return true;
+}
+
 /* Fills out[] with the filters found; returns the count, or a negative error:
  * -1 no region, -2 bad size, -3 CRC mismatch, -4 bad table. */
 static inline int lhp_region_parse(const uint8_t *base, uint32_t max_size, dhp_filter_t *out, int max_out)

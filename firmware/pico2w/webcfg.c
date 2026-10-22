@@ -60,7 +60,7 @@ static volatile bool s_rx_renew;            /* a slot freed after a full queue: 
 static volatile bool s_rx_held;             /* the driver's buffer is held until we renew */
 
 static struct { uint32_t rx, rx_drop, rx_empty, tx, tx_full, renew; } s_net;   /* debug counters */
-#define TXQ 2
+#define TXQ 4
 static uint8_t  s_tx[TXQ][CFG_TUD_NET_MTU];
 static uint16_t s_tx_len[TXQ];
 static volatile uint32_t s_tx_w, s_tx_r;
@@ -116,9 +116,9 @@ static err_t linkoutput(struct netif *netif, struct pbuf *p)            /* main 
 {
     (void)netif;
     if (!tud_ready() || p->tot_len > CFG_TUD_NET_MTU) return ERR_IF;
-    const uint32_t deadline = to_ms_since_boot(get_absolute_time()) + 20;
-    while (s_tx_w - __atomic_load_n(&s_tx_r, __ATOMIC_ACQUIRE) >= TXQ)   /* USB drains it */
-        if ((int32_t)(to_ms_since_boot(get_absolute_time()) - deadline) > 0) { s_net.tx_full++; return ERR_MEM; }
+    /* Never wait here: this runs in the main loop next to the DSP, and the PC
+     * may not be reading. A full queue drops the frame; TCP sends it again. */
+    if (s_tx_w - __atomic_load_n(&s_tx_r, __ATOMIC_ACQUIRE) >= TXQ) { s_net.tx_full++; return ERR_MEM; }
     const uint32_t i = s_tx_w % TXQ;
     s_tx_len[i] = (uint16_t)pbuf_copy_partial(p, s_tx[i], p->tot_len, 0);
     __atomic_store_n(&s_tx_w, s_tx_w + 1, __ATOMIC_RELEASE);
@@ -320,7 +320,9 @@ void webcfg_init(const webcfg_hooks_t *hooks)
 void webcfg_poll(void)
 {
     if (!s_up) return;
-    while (s_rx_r != __atomic_load_n(&s_rx_w, __ATOMIC_ACQUIRE)) {
+    /* only what is queued now: frames that keep arriving wait for the next poll */
+    const uint32_t rx_end = __atomic_load_n(&s_rx_w, __ATOMIC_ACQUIRE);
+    while (s_rx_r != rx_end) {
         const uint32_t i = s_rx_r % RXQ;
         const uint16_t n = s_rx_len[i];
         struct pbuf *p = pbuf_alloc(PBUF_RAW, n, PBUF_POOL);

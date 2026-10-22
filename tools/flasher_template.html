@@ -183,10 +183,22 @@ const LHP = (() => {
   const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
 
-  function buildRegion(d, sel) {
+  /* where the filters came from (same rule as region_label() in extract_filters.py) */
+  function regionLabel(dllName, ver, sel) {
+    let s = dllName + (ver ? " " + ver : "");
+    const names = [...sel].sort((a, b) => a.room - b.room).map(h => h.name.trim());
+    if (names.length && names.every(x => x) && !names.some(x => x.toLowerCase().includes("dolby")))
+      s += " \u00b7 " + names.join(" / ");
+    s = [...s].map(c => { const o = c.charCodeAt(0); return o >= 32 && o < 127 ? c : c === "\u00b7" ? "-" : "?"; }).join("");
+    return s.slice(0, 95);
+  }
+
+  function buildRegion(d, sel, label) {
     const n = sel.length, head = 20 + 16 * n;
+    const lab = label ? new TextEncoder().encode(label.slice(0, 95)) : null;
     let size = head;
     for (const h of sel) size += h.total + (-h.total & 3);
+    if (lab) size += 8 + lab.length + (-lab.length & 3);
     const out = new Uint8Array(size), dv = new DataView(out.buffer);
     let off = head;
     sel.forEach((h, i) => {
@@ -196,6 +208,9 @@ const LHP = (() => {
       out.set(d.subarray(h.off, h.off + h.total), off);
       off += h.total + (-h.total & 3);
     });
+    if (lab) {                                  /* optional source label after the blobs */
+      out.set([0x4C, 0x48, 0x50, 0x53], off); dv.setUint32(off + 4, lab.length, true); out.set(lab, off + 8);
+    }
     dv.setUint32(0, 0x4650484C, true); dv.setUint32(4, 1, true); dv.setUint32(8, n, true);
     dv.setUint32(12, size, true); dv.setUint32(16, crc32(out.subarray(20)), true);
     return out;
@@ -255,7 +270,7 @@ const LHP = (() => {
   }
 
   function roomFilters(found) { return found.filter(h => h.room >= 1 && h.room <= 3 && h.rate === 48000); }
-  return {scan, fileVersion, buildRegion, addRegion, regionAddr, roomFilters};
+  return {scan, fileVersion, buildRegion, regionLabel, addRegion, regionAddr, roomFilters};
 })();
 if (typeof module !== "undefined") module.exports = LHP;
 </script>
@@ -268,7 +283,7 @@ const save = (bytes, name, type) => {
   const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
 };
-let dll = null, rooms = null, customUf2 = null;
+let dll = null, rooms = null, customUf2 = null, dllLabel = "";
 
 function hookDrop(dropId, inputId, onFile) {
   const drop = $(dropId), input = $(inputId);
@@ -297,7 +312,7 @@ hookDrop("dllDrop", "dllInput", async f => {
     const ver = LHP.fileVersion(d);
     if (!found.length) throw new Error("no Lake filter data found - is this the right DLL (version 1.20.0276)?");
     if (sel.length !== 3) throw new Error(`found ${found.length} filters but not all three 48 kHz rooms`);
-    dll = d; rooms = sel;
+    dll = d; rooms = sel; dllLabel = LHP.regionLabel(f.name, ver, sel);
     $("dllDrop").classList.add("done");
     $("dllText").innerHTML = `<b>${f.name.replace(/[<>&]/g, "")}</b> loaded`;
     log.innerHTML = `<span class="okc">OK</span> version ${ver || "?"}, ${found.length} filter sets found.\n` +
@@ -330,7 +345,7 @@ $("buildBtn").addEventListener("click", () => {
   try {
     const board = boardSel();
     const base = fw === "custom" ? customUf2 : b64((board === "usba" ? "payload-usba-" : "payload-") + (fw === "debug" ? "debug" : "normal"));
-    const region = LHP.buildRegion(dll, rooms);
+    const region = LHP.buildRegion(dll, rooms, dllLabel);
     const out = LHP.addRegion(base, region);
     const name = `lakehp_${fw === "custom" ? "custom" : board === "usba" ? "usbhost" : "pico2w"}${fw === "debug" ? "_debug" : ""}_ready.uf2`;
     save(out, name, "application/octet-stream");
