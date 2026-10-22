@@ -81,8 +81,8 @@ python3 tools/extract_filters.py <DLL> --uf2 build-usbhost/lakehp_usbhost.uf2   
 Or use the flasher page and pick **RP2350-USB-A**. Flash it through the **USB-C** port (hold BOOT while plugging in).
 
 - **Controls** are the Pico 2 W's (BOOT button), except **hold 2 s**, which restarts the output stream.
-- **LED** (RGB): green = playing, yellow = starting, red blip each second = nothing plugged in, magenta = the device has no playback format LakeHP can use, fast red = retrying.
-- **Settings page:** same page; its *Output* tab shows the device, its format, and a restart button.
+- **LED** (RGB): green = playing (cyan in stereo mode), yellow = starting, red blip each second = nothing plugged in, magenta = the device has no playback format LakeHP can use, fast red = retrying.
+- **Settings page:** same page; its *Output* tab shows the device, its format, timing diagnostics, a test tone and a restart button. Both boards show which DLL the room filters came from.
 - **Latency:** about 50 ms with the rooms (the 1024-sample convolution blocks; no Bluetooth buffering on top) and about 6 ms in low-latency stereo, plus whatever the DAC or headset adds.
 - **Limits:** full-speed devices only (every USB DAC and dongle is full speed; a hub in between works). One output device at a time. The dongle's microphone and buttons are not passed through yet.
 
@@ -217,7 +217,7 @@ cc -O2 -o resampler_test test/resampler_test.c firmware/common/resampler.c -lm &
 - Host simulations passed: pipeline rate locking, 40 ms Bluetooth stalls, low-latency mode switching (the LL output is an exact downmix and no USB data is lost), and resampler quality (71–75 dB SNR).
 - The nRF5340 overlay uses only Kconfig symbols that exist in NCS v3.4.1, and the S3's `sdkconfig.defaults.nrf5340` variant passes the same front-end check. The nRF build itself was not compiled here.
 
-**Hardware status:** the Pico 2 W build plays clean audio on real hardware (Windows 11, SBC 48 kHz headset). The RP2350-USB-A, ESP32 and nRF5340 builds have not been run on hardware yet. Expect some first-flash tuning: headset quirks, USB enumeration on your OS, buffer sizes. macOS needs `-DUSB_AUDIO51_MACOS=1` for its full-speed feedback format.
+**Hardware status:** the Pico 2 W build plays clean audio on real hardware (Windows 11, SBC 48 kHz headset). The RP2350-USB-A build plays clean audio to a Turtle Beach Stealth 400 dongle (synchronous USB Audio 1.0) on real hardware. The ESP32 and nRF5340 builds have not been run on hardware yet. Expect some first-flash tuning: headset quirks, USB enumeration on your OS, buffer sizes. macOS needs `-DUSB_AUDIO51_MACOS=1` for its full-speed feedback format.
 
 ## Layout
 

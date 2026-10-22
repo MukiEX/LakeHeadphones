@@ -548,6 +548,17 @@ Settings are stored in layout version 3: one flash sector at `PICO_FLASH_SIZE_BY
 
 ---
 
+### Filter source label
+
+After the last blob a region may carry a label: `'LHPS'`, a u32 length and ASCII text. `extract_filters.py` and the flasher page write it from the DLL's file name, its version and the room names (left out if any carries a brand name), for example `LakeHP_OpenRooms.dll 1.0.0.0 - Open Small / Open Medium / Open Large`. The region version stays 1, and older firmware ignores the label. Header output (`-o`) defines `LHP_FILTER_SOURCE` instead. The settings page shows the label under Room and on the Firmware card.
+
+### Settings page networking (`webcfg.c`)
+
+- **Receive:** a 4-frame queue. The USB receiver is re-armed as soon as a frame is copied out. A transfer without a usable frame (size 0: a zero-length packet, or an RNDIS message that is not data) returns false so the driver re-arms it. Returning true there without a renew left the receiver off for good; that was the "page dies after a while" bug.
+- **Transmit:** a 4-frame queue drained in USB context. `linkoutput()` never waits: a full queue drops the frame and TCP resends it.
+- **HTTP:** 3 connection slots with a 1 s `tcp_poll`: a reply that could not be queued is retried, and a connection idle for 4 s is aborted. When all slots are busy, the stalest is replaced. Replies go up to 2 KB. The page gives up on any request after 4 s.
+- The debug log prints frame counters, drops, empty transfers, queue states and busy slots every 2 s.
+
 ## 14. Other builds
 
 These use the same engine and pipeline but have not run on hardware yet.
@@ -799,13 +810,16 @@ Waveshare RP2350-USB-A: RP2350A, 2 MB flash, a native USB-C port and a USB-A por
 - **System clock** 240 MHz at 1.20 V. PIO-USB needs a multiple of 12 MHz.
 - **Core 0:** TinyUSB device from the 250 µs timer interrupt and the shared USB interrupt (as on the Pico 2 W). The main loop runs the DSP, button, LED, settings page and debug log.
 - **Core 1:** the PIO-USB host only. It sends SOF every millisecond and one isochronous packet per frame, from its own timer interrupt, and runs `tuh_task()` plus the output feed in its loop. Nothing else runs there.
-- Flash writes (settings save) and BOOTSEL reads park core 1 through `flash_safe_execute` / multicore lockout. A save is an audible gap of ~50 ms; a BOOTSEL read (every 50 ms) holds core 1 for about 10 µs.
+- **BOOTSEL** shares the flash chip-select, so reading it needs the other core parked in RAM. Core 1 reads it itself every 25 ms, just after a USB frame with its next packet already queued, and parks core 0 for ~10 µs. (Freezing core 1 from core 0 instead could hang core 0 in the SDK's lockout handshake; the watchdog caught that.) Core 0 debounces: two reads 50 ms apart must agree.
+- **Settings saves** park core 1 through `flash_safe_execute`. The settings sector holds 16 page slots written in turn (the last valid one wins), so a save programs one page and freezes core 1 for under 1 ms. Only every 16th save erases the sector (~50 ms, long enough for the device to see a suspended bus), and the output stream is restarted after it.
+- **Watchdog:** 2 s. Core 0's main loop, its USB interrupt and core 1's loop record their current step in watchdog scratch registers; after a watchdog reset the debug log and the settings page (Firmware card, *last reset*) name the steps.
 
 ### Isochronous transfers in Pico-PIO-USB
 
 Upstream Pico-PIO-USB does control, bulk and interrupt transfers only. `patches/pico-pio-usb-iso.patch` adds isochronous:
 
 - Isochronous endpoints are scheduled like interrupt endpoints, every 2^(bInterval−1) frames.
+- **SOF timing:** the frame handler runs from a timer interrupt, so on its own each SOF is late by however long core 1 had interrupts off. Synchronous devices (the Turtle Beach dongle, many cheap DACs) lock their audio clock to SOF and crackle on that jitter. The handler is entered 40 µs early and spins until exactly 1000 µs after the previous SOF; on hardware the worst interval error is 0 µs. The Output tab shows the worst error and how many intervals were off by more than 2 µs.
 - **OUT:** token, then DATA0 with the payload. No handshake, no retry. Packets up to 400 bytes. The NRZI/bit-stuffed encoding is prepared before the frame in one of two static slots (956 bytes each; the worst case, 404 bytes of 0xFF, encodes to 944).
 - **IN:** token, receive, CRC check, no ACK. A missed packet completes with length 0.
 - Slots are freed when the endpoint or device closes. With both slots in use, an endpoint falls back to 64-byte packets.
@@ -826,7 +840,8 @@ The feed keeps about 4 ms of audio in TinyUSB's playback FIFO (2048 bytes), in c
 - **Only finished audio is taken:** the feed reads at most `dhp_out_available()` frames. `dhp_read_stereo()` pads a shortfall with silence, so reading ahead of the DSP would splice gaps into the audio (the first hardware test did exactly that: thousands of output underruns, worst in low-latency mode). TinyUSB's FIFO (4 ms) covers the DSP's bursts instead. `test/usbout_sim.c` models the whole chain (feedback, pump, DSP timing, feed, a synchronous device at ±100 ppm): no gaps after the first 40 ms, in either mode.
 - **Test tone:** the Output tab's *Test tone* sends a 1 kHz tone (left, then right, each for a second) straight to the device, to check the output link on its own.
 - **No device or not streaming:** the pipeline is drained at 48 kHz, so the PC side keeps running.
-- **Failures:** a failed start or transfer retries after 500 ms. Unplugging resets everything. A long press or the settings page restarts the stream (stop, then set up again).
+- **Failures:** a failed start or transfer retries after 500 ms. Unplugging resets everything. A long press or the settings page restarts the stream: stop, and start again on STOP_COMPLETE.
+- **Diagnostics** (Output tab): packets sent, *skipped frames* (USB frames that went out without a packet, from PIO-USB's frame number at each completed packet), packet size range, device volume and range, frame timing.
 
 ### Buffers and latency
 
@@ -846,13 +861,13 @@ A buffer simulation with DSP block times of 11–18 ms gave no underruns from 15
 |---|---|
 | 0x10000000 | firmware (about 200 KB) |
 | 0x10100000 | room filter region, up to 448 KB |
-| end − 32 KB | settings sector (the same v3 layout as the Pico 2 W) |
+| end − 32 KB | settings sector: 16 slots of the Pico 2 W's v3 layout |
 
 Each firmware carries a tag (`"LHP-FREGION"`, then the region address and maximum size; see `lhp_filter_region.h`). `extract_filters.py --uf2` and the flasher page read it, so one tool serves both boards. Untagged (older) firmware gets 0x10300000, and `--addr` overrides it.
 
 ### Settings page
 
-The page is the Pico 2 W's. When the state carries an `out` object, the Headset tab becomes **Output**: the state, device name and VID:PID, format, resampling and FIFO dips, plus a **Restart output** button (`{"action":"restart"}`). The Load card shows the DSP on core 0.
+The page is the Pico 2 W's. When the state carries an `out` object, the Headset tab becomes **Output**: the state, device name and VID:PID, format, resampling, FIFO dips and the diagnostics above, plus **Restart output** (`{"action":"restart"}`) and **Test tone** (`{"action":"tone"}`). The Load card shows the DSP on core 0. The LED is cyan instead of green while playing in stereo (console) mode.
 
 ### TinyUSB version
 
