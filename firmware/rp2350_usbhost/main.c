@@ -222,8 +222,7 @@ static bool __no_inline_not_in_flash_func(bootsel_raw)(void)
 }
 
 /* Reading BOOTSEL disconnects the flash, so core 1 is parked in RAM for
- * ~10 us. PIO-USB's frame timer may run a few microseconds late then, which
- * devices accept; polled only every 50 ms. */
+ * ~10 us; polled every 50 ms. See below for how the pause is placed. */
 static bool button_pressed(void)
 {
 #if LHP_BUTTON_GPIO == -2
@@ -231,11 +230,18 @@ static bool button_pressed(void)
 #elif LHP_BUTTON_GPIO >= 0
     return !gpio_get(LHP_BUTTON_GPIO);
 #else
-    multicore_lockout_start_blocking();
+    /* Core 1 sends a packet every 1 ms and must not be frozen long. Freeze it
+     * at a quiet point in the frame, with this core's interrupts already off,
+     * so none of them can stretch the freeze (core 1 never writes flash here,
+     * so it never needs our interrupts to finish). ~10 us. */
+    usbout_quiet_point();
     const uint32_t irq = save_and_disable_interrupts();
-    const bool b = bootsel_raw();
+    bool b = false;
+    if (multicore_lockout_start_timeout_us(500)) {    /* never hang if core 1 is stuck */
+        b = bootsel_raw();
+        multicore_lockout_end_timeout_us(500);
+    }
     restore_interrupts(irq);
-    multicore_lockout_end_blocking();
     return b;
 #endif
 }

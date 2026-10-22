@@ -68,6 +68,18 @@ void usbout_get_info(usbout_info_t *out)
     }
 }
 void usbout_restart(void) { s_restart_req = true; }
+
+/* For core 0, before it freezes core 1 (BOOTSEL read): returns just after
+ * this frame's isochronous packet has gone out, so the pause (a few us) lands
+ * where core 1 has nothing due for most of a millisecond. */
+void usbout_quiet_point(void)
+{
+    const uint32_t f0 = pio_usb_host_get_frame_number();
+    const uint32_t t0 = time_us_32();
+    while (pio_usb_host_get_frame_number() == f0)
+        if (time_us_32() - t0 > 2000) return;       /* host not running */
+    busy_wait_us_32(300);                            /* SOF + packet + resubmit */
+}
 static volatile bool s_tone;
 void usbout_set_tone(bool on) { s_tone = on; }
 bool usbout_tone(void) { return s_tone; }
@@ -285,7 +297,11 @@ void tuh_audio_event_cb(uint8_t idx, uint8_t stream_idx, tuh_audio_event_t event
         LOG1("usbout: streaming\n");
         return;
     }
-    if (event == TUH_AUDIO_EVENT_STOP_COMPLETE) return;
+    if (event == TUH_AUDIO_EVENT_STOP_COMPLETE) {        /* restart: start again shortly */
+        s_retry_at = to_ms_since_boot(get_absolute_time()) + MOUNT_DELAY_MS;
+        if (!s_retry_at) s_retry_at = 1;
+        return;
+    }
     LOG1("usbout: stream %s (result %u), retrying\n", event == TUH_AUDIO_EVENT_START_COMPLETE ? "start failed" : "failed",
          (unsigned)result);
     set_state(USBOUT_FAILED);
@@ -398,12 +414,12 @@ void usbout_core1_main(dhp_t *pipe)
             if (!tuh_audio_start(s_idx, s_stream)) set_state(USBOUT_FAILED);
         }
         if (s_restart_req) {
+            /* Stop the stream; STOP_COMPLETE starts it again (same configuration). */
             s_restart_req = false;
             if (s_idx != TUSB_INDEX_INVALID_8) {
                 LOG1("usbout: restart requested\n");
-                tuh_audio_stop(s_idx, s_stream);
-                s_mount_idx = s_idx;
-                s_mount_at = now + MOUNT_DELAY_MS;
+                set_state(USBOUT_STARTING);
+                if (!tuh_audio_stop(s_idx, s_stream)) s_retry_at = now + RETRY_DELAY_MS;
             }
         }
 
