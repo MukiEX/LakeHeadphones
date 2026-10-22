@@ -471,6 +471,13 @@ bool tud_audio_rx_done_pre_read_cb(uint8_t rhport, uint16_t n, uint8_t func_id, 
     return true;
 }
 void tud_audio_fb_done_cb(uint8_t func_id) { (void)func_id; s_fb_pkts++; }
+#if USB_AUDIO51_TUSB_NEW
+/* TinyUSB 0.20+ renamed the receive callback (and has no feedback-sent one) */
+bool tud_audio_rx_done_isr(uint8_t rhport, uint16_t n, uint8_t func_id, uint8_t ep, uint8_t alt)
+{
+    return tud_audio_rx_done_pre_read_cb(rhport, n, func_id, ep, alt);
+}
+#endif
 
 static bool set_req_entity(uint8_t rhport, tusb_control_request_t const *p_request, uint8_t *buf);
 

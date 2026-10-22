@@ -226,7 +226,9 @@ static bool __no_inline_not_in_flash_func(bootsel_raw)(void)
  * devices accept; polled only every 50 ms. */
 static bool button_pressed(void)
 {
-#if LHP_BUTTON_GPIO >= 0
+#if LHP_BUTTON_GPIO == -2
+    return false;                       /* no button: never pause core 1 (diagnostics) */
+#elif LHP_BUTTON_GPIO >= 0
     return !gpio_get(LHP_BUTTON_GPIO);
 #else
     multicore_lockout_start_blocking();
@@ -376,9 +378,9 @@ static void web_state(char *b, int max)
         "\"sur\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
         "\"back\":{\"delay\":%.2f,\"hf\":%.2f,\"eq\":%.2f,\"az\":%.1f},"
         "\"saved\":{\"arr\":\"%s\",\"preset\":\"%s\",\"room\":%u,\"lowlat\":%s},"
-        "\"usb\":{\"stream\":%s,\"rx\":%lu},"
+        "\"usb\":{\"stream\":%s,\"rx\":%lu,\"in_ovr\":%lu,\"out_under\":%lu,\"blocks\":%lu},"
         "\"out\":{\"state\":%d,\"name\":\"%s\",\"vid\":\"%04x\",\"pid\":\"%04x\",\"rate\":%lu,\"ch\":%u,\"bits\":%u,"
-        "\"rs\":%s,\"dry\":%lu},"
+        "\"rs\":%s,\"dry\":%lu,\"tone\":%s,\"pkts\":%lu},"
         "\"bt\":{\"state\":0,\"addr\":\"\",\"rate\":0,\"bitpool\":0},"
         "\"load\":{\"dsp\":%d,\"enc\":0}}",
         LHP_FW_VERSION, arr, usb_audio51_is_stereo() ? "true" : "false", g_have_filters ? "true" : "false",
@@ -389,8 +391,10 @@ static void web_state(char *b, int max)
         saved_arr, dhp_preset_name(dhp_preset_of(&g_set.sur, &g_set.back)),
         (unsigned)g_set.room, g_set.lowlat ? "true" : "false",
         usb_audio51_streaming() ? "true" : "false", (unsigned long)rx_rate,
+        (unsigned long)g_pipe.in_overruns, (unsigned long)g_pipe.out_underruns, (unsigned long)g_pipe.blocks,
         (int)o.state, o.name, o.vid, o.pid, (unsigned long)o.rate, o.channels, o.bits,
-        o.resampled ? "true" : "false", (unsigned long)o.fifo_dry,
+        o.resampled ? "true" : "false", (unsigned long)o.fifo_dry, usbout_tone() ? "true" : "false",
+        (unsigned long)o.packets,
         dsp_pct > 100 ? 100 : dsp_pct);
 }
 
@@ -448,6 +452,9 @@ static void web_apply(const char *body, char *resp, int max)
             msg = "Saved";
         } else if (!strcmp(str, "revert")) {
             dhp_set_placement(&g_pipe, &g_set.sur, &g_set.back, false);
+        } else if (!strcmp(str, "tone")) {
+            usbout_set_tone(!usbout_tone());
+            msg = usbout_tone() ? "Test tone on" : "Test tone off";
         } else if (!strcmp(str, "restart")) {
             usbout_restart();
             msg = "Restarting the output";

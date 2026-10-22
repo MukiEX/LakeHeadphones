@@ -33,3 +33,7 @@ pio_usb_encode_test: pio_usb_encode_test.c $(PIOUSB)/pio_usb.c
 	  sed -n '/^uint16_t __no_inline_not_in_flash_func(pio_usb_ll_encode_tx_data)(/,/^}/p' $(PIOUSB)/pio_usb.c; } > pio_usb_encode.c
 	$(CC) $(CFLAGS) -o $@ pio_usb_encode_test.c pio_usb_encode.c
 
+# RP2350-USB-A timing model with the build's buffer sizes (see the file header)
+usbout_sim: usbout_sim.c ../firmware/common/dh_pipeline.c ../engine/lakehp.c
+	$(CC) $(CFLAGS) -DDHP_TARGET_FILL=1792 -DDHP_TARGET_FILL_LL=160 -DDHP_LL_CHUNK=64 -o $@ $^ -lm
+

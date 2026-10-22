@@ -28,3 +28,5 @@ lhp_wav
 firmware/rp2350_usbhost/lib/
 test/pio_usb_encode_test
 test/pio_usb_encode.c
+test/usbout_sim
+__pycache__/

@@ -26,7 +26,7 @@
 #endif
 
 /* Playback FIFO target: enough that a full packet is always queued, no more. */
-#define FIFO_TARGET_MS   3
+#define FIFO_TARGET_MS   4
 #define MOUNT_DELAY_MS   100
 #define RETRY_DELAY_MS   500
 
@@ -67,6 +67,31 @@ void usbout_get_info(usbout_info_t *out)
     }
 }
 void usbout_restart(void) { s_restart_req = true; }
+static volatile bool s_tone;
+void usbout_set_tone(bool on) { s_tone = on; }
+bool usbout_tone(void) { return s_tone; }
+
+/* 1 kHz sine at -12 dBFS, L only then R only every second: tests the output
+ * path alone (the pipeline is still drained so the PC side keeps its pace). */
+static void tone_fill(int16_t *lr, uint32_t n, uint32_t rate)
+{
+    static uint32_t ph, t;
+    static int16_t tab[48];
+    if (!tab[12]) for (int i = 0; i < 48; i++) {
+        /* one cycle of a sine in 48 points (quarter wave below, -12 dBFS) */
+        static const int16_t q[13] = {0, 1070, 2122, 3135, 4096, 4985, 5793, 6503, 7094, 7568, 7912, 8122, 8192};
+        const int k = i % 24, v = k <= 12 ? q[k] : q[24 - k];
+        tab[i] = (int16_t)(i < 24 ? v : -v);
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        const int16_t v = tab[ph / rate];              /* ph in table-index units x rate */
+        ph = (ph + 48u * 1000u) % (48u * rate);
+        const bool left = (t / rate) % 2 == 0;
+        lr[2 * i] = left ? v : 0;
+        lr[2 * i + 1] = left ? 0 : v;
+        t++;
+    }
+}
 
 /* ------------------------------------------------------------------ format conversion */
 static uint8_t fmt_bytes(tuh_audio_format_t f)
@@ -262,8 +287,8 @@ void tuh_audio_event_cb(uint8_t idx, uint8_t stream_idx, tuh_audio_event_t event
 static void feed(void)
 {
     static int16_t lr[64 * 2], rs_out[64 * 2];
-    static int16_t rs_in[64 * 2];
-    static int rs_in_n;
+    static int16_t rs_in[32 * 2];
+    static int rs_in_n, rs_in_pos;
     static uint8_t pkt[64 * 8 * 4];
     const uint32_t target = s_cfg.sample_rate / 1000 * FIFO_TARGET_MS;
     for (int guard = 0; guard < 8; guard++) {
@@ -274,30 +299,48 @@ static void feed(void)
         if (n > 64) n = 64;
         if (n > free_frames) n = free_frames;
         if (!n) return;
-        if (level < s_cfg.sample_rate / 1000) s_info.fifo_dry++;
         const int16_t *src = lr;
+        /* Take only what the DSP has finished: dhp_read_stereo() pads a
+         * shortfall with silence, which would splice gaps into the audio.
+         * TinyUSB's FIFO (FIFO_TARGET_MS) rides out the DSP's bursts. */
         if (!s_rs_on) {
-            dhp_read_stereo(s_pipe, lr, n);
+            const uint32_t avail = dhp_out_available(s_pipe);
+            if (n > avail && !s_tone) n = avail;           /* the tone plays regardless */
+            if (!n) break;
+            dhp_read_stereo(s_pipe, lr, n < avail ? n : avail);
         } else {
             /* 48 kHz pipeline -> device rate */
             int produced = 0;
             while (produced < (int)n) {
-                if (rs_in_n == 0) { dhp_read_stereo(s_pipe, rs_in, 32); rs_in_n = 32; }
+                if (rs_in_n == 0) {
+                    uint32_t k = dhp_out_available(s_pipe);
+                    if (k > 32) k = 32;
+                    if (!k) break;
+                    dhp_read_stereo(s_pipe, rs_in, k);
+                    rs_in_n = (int)k; rs_in_pos = 0;
+                }
                 int used = 0;
-                const int got = rs_process(&s_rs, rs_in + (32 - rs_in_n) * 2, rs_in_n, &used,
+                const int got = rs_process(&s_rs, rs_in + rs_in_pos * 2, rs_in_n, &used,
                                            rs_out + produced * 2, (int)n - produced);
-                rs_in_n -= used;
+                rs_in_n -= used; rs_in_pos += used;
                 produced += got;
                 if (!got && !used) break;
             }
             n = (uint32_t)produced;
             src = rs_out;
+            if (!n) break;
         }
-        if (!n) return;
-        const uint32_t bytes = convert(src, n, pkt);
-        (void)bytes;
+        if (s_tone) { tone_fill(rs_out, n, s_cfg.sample_rate); src = rs_out; }
+        convert(src, n, pkt);
         tuh_audio_write(s_idx, s_stream, pkt, n);
     }
+    /* about to run short of a whole packet: the driver would send silence */
+    const uint32_t free_frames = tuh_audio_write_available(s_idx, s_stream);
+    const uint32_t level = s_fifo_frames > free_frames ? s_fifo_frames - free_frames : 0;
+    static bool was_low;
+    const bool low = level < s_cfg.sample_rate / 1000;
+    if (low && !was_low) s_info.fifo_dry++;
+    was_low = low;
 }
 
 /* No device streaming: drain the pipeline at 48 kHz (the USB input side and

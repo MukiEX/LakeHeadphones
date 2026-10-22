@@ -818,11 +818,13 @@ TinyUSB 0.21's audio host class (UAC1 and UAC2, feedback endpoints, a playback F
 2. **Configure,** unmute, and set the master volume to 0 dB (clamped to the device's range). The PC's volume is applied in the pipeline before this.
 3. **Read** VID/PID and the product string for the settings page, then start the stream.
 
-The feed keeps about 3 ms of audio in TinyUSB's playback FIFO (2048 bytes), in chunks of up to 64 frames:
+The feed keeps about 4 ms of audio in TinyUSB's playback FIFO (2048 bytes), in chunks of up to 64 frames:
 
 - Stereo int16 from the pipeline becomes the device's format. Extra channels are silent; mono gets (L+R)/2.
 - **44.1 kHz devices:** the pipeline's 48 kHz output goes through the resampler (48 → 44.1 kHz). The device still sets the pace, because frames are pulled on demand.
 - **Rate lock:** asynchronous devices pace the FIFO through their feedback endpoint; adaptive and synchronous ones follow the host's SOF. Either way, the pipeline is drained at the device's rate, and the USB input feedback locks the PC to it, exactly as the Bluetooth sink does on the Pico 2 W.
+- **Only finished audio is taken:** the feed reads at most `dhp_out_available()` frames. `dhp_read_stereo()` pads a shortfall with silence, so reading ahead of the DSP would splice gaps into the audio (the first hardware test did exactly that: thousands of output underruns, worst in low-latency mode). TinyUSB's FIFO (4 ms) covers the DSP's bursts instead. `test/usbout_sim.c` models the whole chain (feedback, pump, DSP timing, feed, a synchronous device at ±100 ppm): no gaps after the first 40 ms, in either mode.
+- **Test tone:** the Output tab's *Test tone* sends a 1 kHz tone (left, then right, each for a second) straight to the device, to check the output link on its own.
 - **No device or not streaming:** the pipeline is drained at 48 kHz, so the PC side keeps running.
 - **Failures:** a failed start or transfer retries after 500 ms. Unplugging resets everything. A long press or the settings page restarts the stream (stop, then set up again).
 

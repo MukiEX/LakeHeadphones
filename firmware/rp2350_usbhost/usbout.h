@@ -40,5 +40,7 @@ void usbout_core1_main(dhp_t *pipe);      /* never returns */
 usbout_state_t usbout_state(void);
 void usbout_get_info(usbout_info_t *out); /* any core */
 void usbout_restart(void);                /* any core: stop and set the stream up again */
+void usbout_set_tone(bool on);            /* any core: 1 kHz test tone straight to the output */
+bool usbout_tone(void);
 
 #endif
