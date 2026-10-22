@@ -10,7 +10,8 @@ typedef struct {
 
 void webcfg_init(const webcfg_hooks_t *hooks);   /* main loop, once */
 void webcfg_poll(void);                          /* main loop, often */
-void webcfg_usb_service(void);                   /* TinyUSB context (after tud_task) */
+void webcfg_usb_service(void);
+void webcfg_debug(char *buf, int max);          /* status line for the debug log */                   /* TinyUSB context (after tud_task) */
 
 bool webcfg_json_num(const char *json, const char *key, float *out);
 bool webcfg_json_str(const char *json, const char *key, char *out, int max);

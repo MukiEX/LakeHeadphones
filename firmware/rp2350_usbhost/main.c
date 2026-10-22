@@ -23,7 +23,7 @@
  *   5 presses    -> settings page network adapter on/off (restarts)
  *   hold 2 s     -> restart the output stream
  *
- * LED: green = playing, yellow = starting, red blip = nothing plugged in,
+ * LED: green = playing (cyan in stereo mode), yellow = starting, red blip = nothing plugged in,
  * magenta = device without a usable playback format, fast red = retrying.
  */
 #include <stdio.h>
@@ -258,7 +258,9 @@ static void led_task(uint32_t now)
         else { const bool on = ph < (uint32_t)led_blinks * 2 && !(ph & 1); status_led_rgb(0, 0, on ? 40 : 0); return; }
     }
     switch (usbout_state()) {
-    case USBOUT_STREAMING:   status_led_rgb(0, 24, 0); break;
+    case USBOUT_STREAMING:                              /* cyan in stereo (console) mode */
+        if (usb_audio51_is_stereo()) status_led_rgb(0, 16, 20); else status_led_rgb(0, 24, 0);
+        break;
     case USBOUT_STARTING:    status_led_rgb(24, 16, 0); break;
     case USBOUT_UNSUPPORTED: status_led_rgb(24, 0, 24); break;
     case USBOUT_FAILED:      status_led_rgb((now / 100) & 1 ? 32 : 0, 0, 0); break;
@@ -272,9 +274,13 @@ static void button_task(uint32_t now)
     static bool down, long_fired;
     static int clicks;
     if (g_reboot_at) return;
+    static bool raw_prev, p;
     if (now - last_poll < 50) return;
     last_poll = now;
-    const bool p = button_pressed();
+    /* Debounce: the state changes only when two reads 50 ms apart agree. */
+    const bool raw = button_pressed();
+    if (raw == raw_prev) p = raw;
+    raw_prev = raw;
     if (p && !down) { down = true; down_at = now; long_fired = false; }
     else if (p && down && !long_fired && now - down_at >= LONG_PRESS_MS) {
         long_fired = true;
@@ -284,7 +290,7 @@ static void button_task(uint32_t now)
         LOG0("Restarting the output stream\n");
     } else if (!p && down) {
         down = false;
-        if (!long_fired && now - down_at >= 30) { clicks++; released_at = now; }
+        if (!long_fired) { clicks++; released_at = now; }
     }
     if (!clicks || down || now - released_at <= MULTI_GAP_MS) return;
     if ((clicks < 3 || clicks == 4) && !g_have_filters) {
@@ -300,6 +306,7 @@ static void button_task(uint32_t now)
         LOG0("Low-latency stereo %s\n", on ? "ON" : "OFF (rooms)");
     } else if (clicks == 3) {
         g_set.stereo = usb_audio51_is_stereo() ? 0 : 1;
+        LOG0("Button x3: USB mode -> %s, restarting\n", g_set.stereo ? "stereo (UAC1)" : g_set.ch8 ? "7.1" : "5.1");
         led_blinks = 6;
         g_reboot_at = now + 6 * 300 + 200;
     } else if (clicks == 4) {
@@ -310,8 +317,10 @@ static void button_task(uint32_t now)
         dhp_set_placement(&g_pipe, &g_set.sur, &g_set.back, true);
         settings_save();
         led_blinks = to == DHP_PRESET_THEATER ? 2 : 1;
+        LOG0("Button x4: placement -> %s\n", to == DHP_PRESET_THEATER ? "Theater" : "Factory");
     } else {
         g_set.web_off = !g_set.web_off;
+        LOG0("Button x%d: settings adapter -> %s, restarting\n", clicks, g_set.web_off ? "off" : "on");
         led_blinks = 5;
         g_reboot_at = now + 5 * 300 + 200;
     }
@@ -351,6 +360,9 @@ static void status_task(uint32_t now)
     g_dsp_n = g_dsp_us_sum = g_dsp_us_max = 0;
     LOG0("  load: dsp %lu us/block avg (max %lu) = core0 %lu%%\n",
          (unsigned long)(dn ? ds / dn : 0), (unsigned long)dm, (unsigned long)(ds / (dt * 10u)));
+#if LHP_WEBCFG
+    { char nb[200]; webcfg_debug(nb, sizeof nb); LOG0("  %s\n", nb); }
+#endif
     last_frames = fr; last_blocks = bl; last_pk = o.packets;
 }
 #endif
@@ -465,11 +477,6 @@ static void web_apply(const char *body, char *resp, int max)
         } else if (!strcmp(str, "tone")) {
             usbout_set_tone(!usbout_tone());
             msg = usbout_tone() ? "Test tone on" : "Test tone off";
-        } else if (!strcmp(str, "sofprec")) {
-            usbout_info_t o;
-            usbout_get_info(&o);
-            usbout_set_sof_precise(!o.sof_precise);
-            msg = o.sof_precise ? "Precise SOF off" : "Precise SOF on";
         } else if (!strcmp(str, "restart")) {
             usbout_restart();
             msg = "Restarting the output";

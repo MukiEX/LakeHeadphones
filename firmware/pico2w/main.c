@@ -417,6 +417,9 @@ static void status_task(uint32_t now)
                (unsigned long)(dn ? ds / dn : 0), (unsigned long)dm, (unsigned long)(ds / (dt * 10u)),
                (unsigned long)(en ? es / en : 0), (unsigned long)em, (unsigned long)(es / (dt * 10u)));
     }
+#if LHP_WEBCFG
+    { char nb[200]; webcfg_debug(nb, sizeof nb); LOG0("  %s\n", nb); }
+#endif
     last_frames = fr; last_blocks = bl;
 }
 #endif
