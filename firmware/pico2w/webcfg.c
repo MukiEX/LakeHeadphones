@@ -59,7 +59,7 @@ static volatile uint32_t s_rx_w, s_rx_r;    /* written in USB context / read in 
 static volatile bool s_rx_renew;            /* a slot freed after a full queue: renew in USB context */
 static volatile bool s_rx_held;             /* the driver's buffer is held until we renew */
 
-static struct { uint32_t rx, rx_drop, tx, tx_full, renew; } s_net;   /* debug counters */
+static struct { uint32_t rx, rx_drop, rx_empty, tx, tx_full, renew; } s_net;   /* debug counters */
 #define TXQ 2
 static uint8_t  s_tx[TXQ][CFG_TUD_NET_MTU];
 static uint16_t s_tx_len[TXQ];
@@ -67,7 +67,11 @@ static volatile uint32_t s_tx_w, s_tx_r;
 
 bool tud_network_recv_cb(const uint8_t *src, uint16_t size)            /* USB context */
 {
-    if (!size) return true;
+    /* Size 0: the transfer held no usable frame (a zero-length packet, or an
+     * RNDIS message that is not a data packet). Saying "not taken" makes the
+     * driver re-arm the receiver; "taken" without a renew would leave it off
+     * for good - the settings page went deaf after some requests. */
+    if (!size) { s_net.rx_empty++; return false; }
     if (size > CFG_TUD_NET_MTU) { s_rx_held = true; s_rx_renew = true; return true; }   /* drop */
     if (s_rx_w - __atomic_load_n(&s_rx_r, __ATOMIC_ACQUIRE) >= RXQ) {            /* full: drop it */
         s_net.rx_drop++;
@@ -369,8 +373,8 @@ void webcfg_debug(char *buf, int max)
 {
     int busy = 0;
     for (unsigned i = 0; i < TU_ARRAY_SIZE(s_conn); i++) busy += s_conn[i].used;
-    snprintf(buf, max, "net: rx %lu (dropped %lu, renews %lu, queued %lu), tx %lu (queue full %lu, queued %lu, can_xmit %d), http slots busy %d/%d",
-             (unsigned long)s_net.rx, (unsigned long)s_net.rx_drop, (unsigned long)s_net.renew,
+    snprintf(buf, max, "net: rx %lu (dropped %lu, empty %lu, renews %lu, queued %lu), tx %lu (queue full %lu, queued %lu, can_xmit %d), http slots busy %d/%d",
+             (unsigned long)s_net.rx, (unsigned long)s_net.rx_drop, (unsigned long)s_net.rx_empty, (unsigned long)s_net.renew,
              (unsigned long)(s_rx_w - s_rx_r), (unsigned long)s_net.tx, (unsigned long)s_net.tx_full,
              (unsigned long)(s_tx_w - s_tx_r), (int)tud_network_can_xmit(64), busy, (int)TU_ARRAY_SIZE(s_conn));
 }
